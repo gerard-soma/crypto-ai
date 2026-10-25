@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(python3 agent.py kup:*)",
+      "Bash(python3 agent.py sprzedaj:*)",
+      "Bash(.venv/bin/python agent.py kup:*)",
+      "Bash(.venv/bin/python agent.py sprzedaj:*)"
+    ],
+    "deny": [
+      "Bash(python3 agent.py eksport:*)",
+      "Bash(.venv/bin/python agent.py eksport:*)",
+      "Read(~/.config/wieloryby/**)",
+      "Bash(cat ~/.config/wieloryby:*)"
+    ]
+  }
+}
