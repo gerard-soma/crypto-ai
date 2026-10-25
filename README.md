@@ -4,7 +4,7 @@
 
 ## Jak to działa
 
-1. **Odkrywanie** (`odkryj`) bierze z Jupitera tokeny, które urosły o 50% i więcej w ciągu 24 h, mają płynność od $30k i kapitalizację od $100k. Na każdym z nich szuka portfeli, które kupiły za co najmniej $150 i podwoiły pieniądze. Pomija pierwszą minutę po starcie tokenu (to snajperzy), a także pule, routery i boty z setkami transakcji dziennie. Portfele z wygranymi na kilku tokenach dostają wyższy wynik.
+1. **Odkrywanie** (`odkryj`) bierze z Jupitera tokeny, które urosły o 50% i więcej w ciągu 24 h, mają płynność od $30k i kapitalizację od $100k. Na każdym z nich szuka portfeli, które kupiły za co najmniej $150 i podwoiły pieniądze. Pomija pierwszą minutę po starcie tokenu (to snajperzy), a także pule i routery. Jedno trafienie to może być fart, więc każdy kandydat i każdy już obserwowany portfel dostaje profil z własnej historii (ostatnie ok. 300 transakcji): na ilu tokenach jest na plusie, a na ilu na minusie, jaki ma łączny wynik, jak długo trzyma tokeny i ile robi zamian dziennie. Na listę trafiają tylko portfele z co najmniej 2 tokenami na plusie, skutecznością od 30%, łącznym wynikiem na plusie, medianą trzymania od 1 h i najwyżej 20 zamianami dziennie (progi w `.env.example`). Większość kandydatów odpada: to boty, skalperzy albo portfele, które ogólnie tracą.
 2. **Raport** (`raport`) sprawdza transakcje obserwowanych portfeli z ostatnich 24 h i grupuje zakupy według tokenu. Gdy ten sam token kupiło netto kilka portfeli, raport oznacza to jako „KONSENSUS”. Ocenę obniżają czerwone flagi: twórca może dodrukować albo zamrozić tokeny, płynność jest niska, posiadanie jest skupione w kilku portfelach, ruch jest sztuczny albo cena już uciekła ponad 2× od wejścia wielorybów.
 3. **Ty decydujesz**: klikasz link, Jupiter otwiera się z ustawioną parą SOL → token, a transakcję potwierdzasz w swoim portfelu.
 
@@ -20,16 +20,22 @@
    ```
    Otwórz `.env` i wklej klucz po `HELIUS_API_KEY=`.
 
-Darmowy plan daje 1 mln kredytów miesięcznie. Odkrywanie zużywa ok. 10–15 tys., raport ok. 3–9 tys., a agent wypisuje zużycie po każdym uruchomieniu.
+Darmowy plan daje 1 mln kredytów miesięcznie. Odkrywanie zużywa ok. 30 tys., raport ok. 3–9 tys., a agent wypisuje zużycie po każdym uruchomieniu. Licznik miesięczny leży w `dane/helius.json`. Agent odmówi pracy po przekroczeniu `HELIUS_MONTHLY_BUDGET` (domyślnie 300 tys.), odkrywa najwyżej raz na 20 h (`odkryj --wymus` pomija limit), a raport młodszy niż godzina pokazuje z pamięci (`raport --swiezy` pobiera nowy).
 
 ## Użycie
 
 ```
-python3 agent.py odkryj        # raz na kilka dni: buduje listę obserwowanych portfeli
+python3 agent.py odkryj        # codziennie przez pierwsze dni, potem co kilka: buduje i weryfikuje listę portfeli
 python3 agent.py raport        # kiedy chcesz: co kupują teraz
 python3 agent.py raport --godziny 6
 python3 agent.py portfel ADRES # podgląd jednego portfela
+python3 agent.py wyniki        # dziennik sygnałów: jak zachowały się po 24 h i 72 h
+python3 agent.py diagnoza      # szybki stan portfela agenta i prywatnego, bez kredytów Helius
 ```
+
+### Dziennik sygnałów
+
+Każdy raport dopisuje swoje sygnały do `dane/dziennik.json` razem z ceną z chwili sygnału (ten sam token najwyżej raz na dobę). Raport i `wyniki` uzupełniają cenę po 24 h i 72 h. `wyniki` pokazuje medianę zmiany ceny, odsetek sygnałów, które doszły do 2×, i odsetek, które spadły o 40% lub więcej, osobno dla sygnałów z ostrzeżeniami, bez ostrzeżeń i dla KONSENSUSU. Po 1–2 tygodniach widać, czy kopiowanie tych portfeli daje przewagę, zanim wyda się na to pieniądze. Cena jest z chwili sprawdzenia, więc uruchamiaj raport albo `wyniki` codziennie.
 
 ## Handel z akceptacją
 

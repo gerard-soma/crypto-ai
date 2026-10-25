@@ -5,14 +5,17 @@ Polecenia:
   python3 agent.py odkryj          # znajduje skuteczne portfele i zapisuje listę obserwowanych
   python3 agent.py raport          # sprawdza, co te portfele kupują, i daje ranking sygnałów
   python3 agent.py portfel ADRES   # pokazuje ostatnie transakcje jednego portfela
+  python3 agent.py wyniki          # dziennik sygnałów: jak zachowały się po 24 h i 72 h
 
 Tylko odczyt danych: agent nie zna Twojego klucza prywatnego i niczego nie kupuje.
 """
 import argparse
+import atexit
 import json
 import math
 import os
 import re
+import statistics
 import sys
 import threading
 import time
@@ -27,6 +30,8 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "dane"
 WATCHLIST = DATA / "portfele.json"
 REPORTS = DATA / "raporty"
+JOURNAL = DATA / "dziennik.json"
+USAGE = DATA / "helius.json"
 
 SOL = "So11111111111111111111111111111111111111112"  # natywny SOL i WSOL liczymy razem
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -71,16 +76,71 @@ JUP_BASE = "https://api.jup.ag" if JUP_KEY else "https://lite-api.jup.ag"
 MIN_BUY_USD = cfg("MIN_BUY_USD", 150.0)          # od jakiej kwoty zakupu portfel uznajemy za „duży”
 MIN_WIN_ROI = cfg("MIN_WIN_ROI", 1.0)            # 1.0 = co najmniej podwoił pieniądze na tokenie
 MAX_WALLETS = cfg("MAX_WALLETS", 30)             # ile portfeli obserwujemy
-DISCOVERY_TOKENS = cfg("DISCOVERY_TOKENS", 8)    # na ilu zwycięskich tokenach szukamy portfeli
+DISCOVERY_TOKENS = cfg("DISCOVERY_TOKENS", 15)   # na ilu zwycięskich tokenach szukamy portfeli
 DISCOVERY_DAYS = cfg("DISCOVERY_DAYS", 3.0)      # jak daleko wstecz patrzymy przy odkrywaniu
 LOOKBACK_HOURS = cfg("LOOKBACK_HOURS", 24.0)     # okno raportu
 MIN_SIGNAL_USD = cfg("MIN_SIGNAL_USD", 50.0)     # minimalny zakup netto, który liczymy jako sygnał
-MAX_TRADES_PER_DAY = cfg("MAX_TRADES_PER_DAY", 60)  # częściej handlują boty i skalperzy, których nie da się skopiować
+MAX_TRADES_PER_DAY = cfg("MAX_TRADES_PER_DAY", 20)  # zamian dziennie; częściej handlują boty i skalperzy, których nie da się skopiować
+# Profil portfela z jego własnej historii: jedno trafienie to może być fart, liczymy też przegrane.
+PROFILE_PAGES = cfg("PROFILE_PAGES", 3)          # ile stron (po 100 transakcji) historii portfela czytamy
+MIN_TOKENS = cfg("MIN_TOKENS", 3)                # na ilu tokenach musi mieć ocenialny wynik
+MIN_WINS = cfg("MIN_WINS", 2)                    # na ilu różnych tokenach musi być na plusie
+MIN_WIN_RATE = cfg("MIN_WIN_RATE", 0.3)          # odsetek tokenów na plusie
+MIN_HOLD_HOURS = cfg("MIN_HOLD_HOURS", 1.0)      # mediana czasu od zakupu do sprzedaży; krócej = flipper
+
+HELIUS_BUDGET = cfg("HELIUS_MONTHLY_BUDGET", 300_000)  # twardy limit kredytów na miesiąc (darmowy plan: 1 mln)
+DISCOVERY_COOLDOWN_H = cfg("DISCOVERY_COOLDOWN_H", 20.0)  # odkrywanie najwyżej raz na tyle godzin
+REPORT_CACHE_MIN = cfg("REPORT_CACHE_MIN", 60.0)  # raport młodszy niż tyle minut pokazujemy z pamięci
 
 CREDITS_PER_CALL = 100  # Enhanced Transactions API Helius
 helius_calls = 0
 _lock = threading.Lock()
 _last_call = [0.0]
+
+
+# --------------------------------------------------------------------------- budżet Helius
+
+def load_usage():
+    return json.loads(USAGE.read_text()) if USAGE.exists() else {}
+
+
+def month_key():
+    return datetime.now().strftime("%Y-%m")
+
+
+_used_before = [None]  # kredyty zużyte w tym miesiącu przed tym uruchomieniem
+
+
+def used_before():
+    if _used_before[0] is None:
+        _used_before[0] = load_usage().get(month_key(), 0)
+    return _used_before[0]
+
+
+def save_usage(**extra):
+    if not helius_calls and not extra:
+        return
+    usage = load_usage()
+    usage[month_key()] = used_before() + helius_calls * CREDITS_PER_CALL
+    usage.update(extra)
+    DATA.mkdir(exist_ok=True)
+    USAGE.write_text(json.dumps(usage, indent=1))
+
+
+atexit.register(save_usage)
+
+
+def require_budget(estimate, what):
+    left = HELIUS_BUDGET - used_before()
+    if estimate > left:
+        sys.exit(f"{what} zużyłoby ok. {estimate:,} kredytów Helius, a w tym miesiącu zostało {max(left, 0):,} "
+                 f"z budżetu {HELIUS_BUDGET:,} (HELIUS_MONTHLY_BUDGET w .env).")
+
+
+def usage_line():
+    session = helius_calls * CREDITS_PER_CALL
+    return (f"kredyty Helius: ~{session:,} teraz · ~{used_before() + session:,} w tym miesiącu "
+            f"z budżetu {HELIUS_BUDGET:,}")
 
 
 # --------------------------------------------------------------------------- HTTP
@@ -117,6 +177,8 @@ def helius_page(address, params):
     if not HELIUS_KEY:
         sys.exit("Brak HELIUS_API_KEY. Skopiuj .env.example do .env i wklej klucz (instrukcja w README.md).")
     with _lock:
+        if used_before() + (helius_calls + 1) * CREDITS_PER_CALL > HELIUS_BUDGET:
+            raise ApiError(0, "miesięczny budżet Helius wyczerpany (HELIUS_MONTHLY_BUDGET)", "helius")
         wait = _last_call[0] + HELIUS_INTERVAL - time.time()
         if wait > 0:
             time.sleep(wait)
@@ -167,6 +229,16 @@ def jup_get(path):
 
 def sol_price():
     return float(jup_get(f"/price/v3?ids={SOL}")[SOL]["usdPrice"])
+
+
+def token_prices(mints):
+    """Ceny USD z Jupitera, po 50 naraz. Tokenów bez ceny (martwych) nie ma w wyniku."""
+    prices, mints = {}, list(mints)
+    for i in range(0, len(mints), 50):
+        for m, p in (jup_get(f"/price/v3?ids={','.join(mints[i:i + 50])}") or {}).items():
+            if p and p.get("usdPrice") is not None:
+                prices[m] = float(p["usdPrice"])
+    return prices
 
 
 def token_info(mints):
@@ -228,12 +300,57 @@ def wallet_trades(txs, wallet, sol_usd):
     return trades
 
 
-def trades_per_day(txs):
-    if len(txs) < 20:
-        return 0.0
-    stamps = [t.get("timestamp", 0) for t in txs]
-    span_h = max((max(stamps) - min(stamps)) / 3600, 0.25)
-    return len(txs) / span_h * 24
+def trades_per_day(trades, days=None):
+    """Zamiany (nie wszystkie transakcje: spam i przelewy zawyżają wynik) na dobę. Bez okna liczymy rozpiętość historii."""
+    if days is None:
+        if len(trades) < 10:
+            return 0.0
+        stamps = [t["ts"] for t in trades]
+        days = max((max(stamps) - min(stamps)) / 86400, 1 / 24)
+    return len(trades) / days
+
+
+def wallet_profile(trades, prices):
+    """Wynik portfela na każdym tokenie z jego historii: wygrane, przegrane i jak długo trzyma."""
+    per = {}
+    for tr in sorted(trades, key=lambda t: t["ts"]):
+        if tr["mint"] in SKIP_MINTS:
+            continue
+        p = per.setdefault(tr["mint"], {"buy_usd": 0, "buy_amt": 0, "sell_usd": 0, "sell_amt": 0,
+                                        "last_buy": None, "holds": []})
+        p[f"{tr['side']}_usd"] += tr["usd"]
+        p[f"{tr['side']}_amt"] += tr["amount"]
+        if tr["side"] == "buy":
+            p["last_buy"] = tr["ts"]
+        elif p["last_buy"] is not None:
+            p["holds"].append(tr["ts"] - p["last_buy"])
+    rois, holds, pnl = [], [], 0.0
+    for mint, p in per.items():
+        if p["buy_usd"] < 20:
+            continue  # kupione przed oknem historii albo grosze: nie da się ocenić
+        sell_usd = p["sell_usd"]
+        if p["sell_amt"] > p["buy_amt"] * 1.05:
+            sell_usd *= p["buy_amt"] / p["sell_amt"]  # część sprzedanych tokenów kupił przed oknem
+        value = sell_usd + max(p["buy_amt"] - p["sell_amt"], 0) * prices.get(mint, 0)
+        rois.append(value / p["buy_usd"] - 1)
+        pnl += value - p["buy_usd"]
+        holds += p["holds"]
+    wins = sum(r > 0 for r in rois)
+    return {"tokens": len(rois), "won": wins, "win_rate": round(wins / len(rois), 2) if rois else 0,
+            "pnl_usd": round(pnl), "hold_h": round(statistics.median(holds) / 3600, 1) if holds else None}
+
+
+def profile_problem(prof):
+    """Powód odrzucenia portfela albo None, jeśli przechodzi."""
+    if prof["trades_per_day"] > MAX_TRADES_PER_DAY:
+        return "bot lub skalper"
+    if prof["hold_h"] is not None and prof["hold_h"] < MIN_HOLD_HOURS:
+        return "flipper (krótko trzyma)"
+    if prof["tokens"] < MIN_TOKENS:
+        return "za mało historii"
+    if prof["won"] < MIN_WINS or prof["win_rate"] < MIN_WIN_RATE or prof["pnl_usd"] <= 0:
+        return "słaba skuteczność"
+    return None
 
 
 # --------------------------------------------------------------------------- odkrywanie portfeli
@@ -318,6 +435,11 @@ def safe_early_traders(token, sol_usd):
 
 
 def cmd_discover(args):
+    since_last = (time.time() - load_usage().get("last_discovery", 0)) / 3600
+    if since_last < DISCOVERY_COOLDOWN_H and not args.wymus:
+        sys.exit(f"Ostatnie odkrywanie było {since_last:.0f} h temu, a limit to raz na {DISCOVERY_COOLDOWN_H:g} h "
+                 f"(ok. 30 tys. kredytów Helius). Lista portfeli jest aktualna. Wymuszenie: odkryj --wymus")
+    require_budget(40_000, "Odkrywanie")
     sol_usd = sol_price()
     tokens = winning_tokens()
     if not tokens:
@@ -339,39 +461,53 @@ def cmd_discover(args):
     def score(wins):
         return len(wins) * 10 + sum(math.log2(1 + min(x["roi"], 50)) for x in wins)
 
-    ranked = sorted(found.items(), key=lambda kv: score(kv[1]), reverse=True)[: MAX_WALLETS * 2]
+    ranked = dict(sorted(found.items(), key=lambda kv: score(kv[1]), reverse=True)[: MAX_WALLETS * 2])
 
-    # Odsiewamy boty i skalperów: portfele, które handlują częściej niż MAX_TRADES_PER_DAY.
-    def bot_check(w):
+    # Każdy kandydat i każdy już obserwowany portfel dostaje świeży profil z własnej historii.
+    old = load_watchlist()
+    candidates = list(dict.fromkeys([*ranked, *old]))
+    print(f"\nSprawdzam historię {len(candidates)} portfeli (skuteczność, boty, czas trzymania)…")
+
+    def fetch(w):
         try:
-            return w, trades_per_day(helius_txs(w, pages=1))
-        except ApiError:
-            return w, 0.0
+            return w, helius_txs(w, pages=PROFILE_PAGES)
+        except ApiError as e:
+            print(f"  ! {short(w)}: pomijam ({e})", file=sys.stderr)
+            return w, []
 
     with ThreadPoolExecutor(max_workers=3) as pool:
-        rates = dict(pool.map(bot_check, [w for w, _ in ranked]))
+        histories = dict(pool.map(fetch, candidates))
+    trades = {w: wallet_trades(txs, w, sol_usd) for w, txs in histories.items()}
+    prices = token_prices({t["mint"] for ts in trades.values() for t in ts} - SKIP_MINTS)
 
-    old = load_watchlist()
     today = datetime.now(timezone.utc).date().isoformat()
-    book = {w: {**e, "score": round(e["score"] * 0.8, 2)} for w, e in old.items()  # stare wyniki z czasem słabną
-            if e.get("trades_per_day", 0) <= MAX_TRADES_PER_DAY}
-    for w, wins in ranked:
-        if rates.get(w, 0) > MAX_TRADES_PER_DAY:
+    book, rejected = {}, {}
+    for w in candidates:
+        if not histories[w]:
             continue
-        prev = book.get(w, {})
-        book[w] = {"score": round(prev.get("score", 0) + score(wins), 2),
-                   "wins": (wins + prev.get("wins", []))[:10],
-                   "trades_per_day": round(rates.get(w, 0)),
+        prof = {**wallet_profile(trades[w], prices), "trades_per_day": round(trades_per_day(trades[w]))}
+        problem = profile_problem(prof)
+        if problem:
+            rejected[problem] = rejected.get(problem, 0) + 1
+            continue
+        prev = old.get(w, {})
+        base = prev.get("base", prev.get("score", 0)) * 0.8 + score(ranked.get(w, []))  # stare wyniki słabną
+        book[w] = {"score": round(base * (0.5 + prof["win_rate"]), 2), "base": round(base, 2),
+                   "wins": (ranked.get(w, []) + prev.get("wins", []))[:10], **prof,
                    "found": prev.get("found", today), "updated": today}
     book = dict(sorted(book.items(), key=lambda kv: kv[1]["score"], reverse=True)[:MAX_WALLETS])
     DATA.mkdir(exist_ok=True)
     WATCHLIST.write_text(json.dumps(book, indent=1, ensure_ascii=False))
+    save_usage(last_discovery=time.time())
 
+    if rejected:
+        print("Odrzucone: " + ", ".join(f"{n} × {why}" for why, n in sorted(rejected.items(), key=lambda kv: -kv[1])))
     print(f"\nObserwuję {len(book)} portfeli (zapisane w {WATCHLIST.relative_to(ROOT)}). Najlepsze:")
     for w, e in list(book.items())[:10]:
-        wins = ", ".join(f"{x['symbol']} +{x['roi']:.0%}" for x in e["wins"][:3])
-        print(f"  {short(w)}  wynik {e['score']:>5}  {wins}")
-    print(f"\nZużyte kredyty Helius: ~{helius_calls * CREDITS_PER_CALL:,} (darmowy plan: 1 000 000/mies.)")
+        hold = f"{e['hold_h']:g} h" if e["hold_h"] is not None else "nie sprzedaje"
+        print(f"  {short(w)}  wynik {e['score']:>5}  na plusie {e['won']}/{e['tokens']} tokenów "
+              f"({e['win_rate']:.0%}) · wynik ${e['pnl_usd']:,} · trzyma {hold} · {e['trades_per_day']} zamian/dzień")
+    print(f"\nZużyte {usage_line()}")
 
 
 # --------------------------------------------------------------------------- raport
@@ -416,9 +552,21 @@ def cmd_report(args):
     book = load_watchlist()
     if not book:
         sys.exit("Lista obserwowanych portfeli jest pusta. Najpierw uruchom: python3 agent.py odkryj")
+    cached = latest_report()
+    if cached and not args.swiezy and cached[1]["hours"] == args.godziny:
+        age_min = (time.time() - parse_ts(cached[1]["created"])) / 60
+        if age_min < REPORT_CACHE_MIN:
+            print(f"Raport z pamięci sprzed {age_min:.0f} min (0 kredytów Helius). Świeży: raport --swiezy",
+                  file=sys.stderr)
+            if args.json:
+                print(json.dumps(cached[1], indent=1, ensure_ascii=False))
+            else:
+                print_report(cached[1], cached[0])
+            return
+    wallets = list(book)
+    require_budget(len(wallets) * 3 * CREDITS_PER_CALL, "Raport")
     sol_usd = sol_price()
     since = time.time() - args.godziny * 3600
-    wallets = list(book)
     print(f"Sprawdzam {len(wallets)} portfeli z ostatnich {args.godziny:g} h…", file=sys.stderr)
 
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -433,10 +581,11 @@ def cmd_report(args):
 
     per_token, bots = {}, []
     for w, txs in results:
-        if trades_per_day(txs) > MAX_TRADES_PER_DAY:
+        trades = wallet_trades(txs, w, sol_usd)
+        if trades_per_day(trades, args.godziny / 24) > MAX_TRADES_PER_DAY:
             bots.append(w)
             continue
-        for tr in wallet_trades(txs, w, sol_usd):
+        for tr in trades:
             if tr["mint"] in SKIP_MINTS:
                 continue
             p = per_token.setdefault(tr["mint"], {}).setdefault(
@@ -486,11 +635,18 @@ def cmd_report(args):
     REPORTS.mkdir(parents=True, exist_ok=True)
     path = REPORTS / f"raport-{datetime.now():%Y%m%d-%H%M}.json"
     path.write_text(json.dumps(report, indent=1, ensure_ascii=False))
+    journal_update(journal_add(load_journal(), report))
 
     if args.json:
         print(json.dumps(report, indent=1, ensure_ascii=False))
         return
     print_report(report, path)
+
+
+def latest_report():
+    """(ścieżka, raport) najnowszego zapisanego raportu albo None."""
+    reports = sorted(REPORTS.glob("raport-*.json")) if REPORTS.exists() else []
+    return (reports[-1], json.loads(reports[-1].read_text())) if reports else None
 
 
 def fmt_usd(x):
@@ -525,8 +681,84 @@ def print_report(r, path):
             print(f"  • {e['symbol']}: {e['wallets']} portf., {fmt_usd(e['usd'])}")
     if r["bots_skipped"]:
         print(f"\nPominięte jako boty: {', '.join(short(w) for w in r['bots_skipped'])}")
-    print(f"\nZapisano: {path.relative_to(ROOT)} · kredyty Helius: ~{r['helius_credits']:,}")
+    print(f"\nZapisano: {path.relative_to(ROOT)} · {usage_line()}")
     print("To nie jest porada inwestycyjna. Sygnał pokazuje, co kupili inni, a nie co zarobisz.")
+
+
+# --------------------------------------------------------------------------- dziennik sygnałów
+
+def journal_add(journal, report):
+    """Dopisuje sygnały z raportu. Ten sam token najwyżej raz na 24 h, żeby częste raporty nie dublowały wpisów."""
+    ts = parse_ts(report["created"])
+    for s in report["signals"]:
+        if not s.get("price") or any(e["mint"] == s["mint"] and abs(ts - e["ts"]) < 86400 for e in journal):
+            continue
+        journal.append({"ts": ts, "date": report["created"], "mint": s["mint"], "symbol": s["symbol"],
+                        "price": s["price"], "score": s["score"], "wallets": s["wallets"],
+                        "net_usd": s["net_usd"], "liquidity": s["liquidity"], "flags": s["flags"],
+                        "p24": None, "p72": None})
+    return journal
+
+
+def load_journal():
+    if JOURNAL.exists():
+        return json.loads(JOURNAL.read_text())
+    # Pierwsze uruchomienie: zasilamy dziennik sygnałami z zapisanych już raportów.
+    journal = []
+    for path in sorted(REPORTS.glob("raport-*.json")):
+        journal_add(journal, json.loads(path.read_text()))
+    return journal
+
+
+def journal_update(journal):
+    """Uzupełnia ceny po 24 h i 72 h. Cena jest z chwili sprawdzenia, więc po przerwie może być późniejsza."""
+    now = time.time()
+    todo = [e for e in journal if (e["p24"] is None and now - e["ts"] >= 86400)
+            or (e["p72"] is None and now - e["ts"] >= 3 * 86400)]
+    if todo:
+        prices = token_prices({e["mint"] for e in todo})
+        for e in todo:
+            price = prices.get(e["mint"], 0.0)  # brak ceny = token martwy
+            for key, age in (("p24", 86400), ("p72", 3 * 86400)):
+                if e[key] is None and now - e["ts"] >= age:
+                    e[key] = price
+                    e[f"{key}_checked"] = round((now - e["ts"]) / 3600)
+    DATA.mkdir(exist_ok=True)
+    JOURNAL.write_text(json.dumps(journal, indent=1, ensure_ascii=False))
+    return journal
+
+
+def journal_stats(entries, key):
+    changes = [e[key] / e["price"] - 1 for e in entries if e[key] is not None]
+    if not changes:
+        return None
+    return {"n": len(changes), "median_pct": round(statistics.median(changes) * 100),
+            "hit_2x_pct": round(sum(c >= 1 for c in changes) / len(changes) * 100),
+            "stop_pct": round(sum(c <= -0.4 for c in changes) / len(changes) * 100)}
+
+
+def cmd_results(args):
+    journal = journal_update(load_journal())
+    groups = {"wszystkie": journal,
+              "bez ostrzeżeń": [e for e in journal if not e["flags"]],
+              "z ostrzeżeniami": [e for e in journal if e["flags"]],
+              "KONSENSUS": [e for e in journal if e["wallets"] >= 2]}
+    stats = {g: {k: journal_stats(es, k) for k in ("p24", "p72")} for g, es in groups.items()}
+    if args.json:
+        print(json.dumps({"entries": len(journal), "stats": stats}, indent=1, ensure_ascii=False))
+        return
+    waiting = sum(e["p24"] is None for e in journal)
+    print(f"DZIENNIK SYGNAŁÓW · {len(journal)} wpisów · {waiting} czeka na pierwsze 24 h")
+    print("Zmiana ceny od chwili sygnału (mediana) · ile doszło do 2× · ile spadło o 40% lub więcej\n")
+    for g, by_key in stats.items():
+        for key, label in (("p24", "24 h"), ("p72", "72 h")):
+            st = by_key[key]
+            if st:
+                print(f"  {g:<16} po {label}: {st['n']:>3} sygn. · mediana {st['median_pct']:+}% · "
+                      f"2×: {st['hit_2x_pct']}% · −40%: {st['stop_pct']}%")
+    if not any(st for by_key in stats.values() for st in by_key.values()):
+        print("  Jeszcze za wcześnie: pierwsze wyniki pojawią się 24 h po pierwszym sygnale.")
+    print("\nCena jest z chwili sprawdzenia: uruchamiaj raport albo wyniki codziennie, żeby była bliska 24 h i 72 h.")
 
 
 # --------------------------------------------------------------------------- portfel
@@ -537,7 +769,7 @@ def cmd_wallet(args):
     trades = wallet_trades(txs, args.adres, sol_usd)
     info = token_info({t["mint"] for t in trades}) if trades else {}
     print(f"{args.adres}: {len(txs)} transakcji, {len(trades)} zamian w {args.godziny:g} h "
-          f"(~{trades_per_day(txs):.0f}/dzień)")
+          f"(~{trades_per_day(trades, args.godziny / 24):.0f} zamian/dzień)")
     for t in trades:
         when = datetime.fromtimestamp(t["ts"]).strftime("%d.%m %H:%M")
         sym = info.get(t["mint"], {}).get("symbol", short(t["mint"]))
@@ -547,17 +779,23 @@ def cmd_wallet(args):
 def main():
     ap = argparse.ArgumentParser(description="Agent wielorybów dla jup.ag (Solana)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("odkryj", help="znajdź skuteczne portfele")
+    op = sub.add_parser("odkryj", help="znajdź skuteczne portfele")
+    op.add_argument("--wymus", action="store_true", help="pomiń limit raz na DISCOVERY_COOLDOWN_H godzin")
     rp = sub.add_parser("raport", help="co kupują obserwowane portfele")
     rp.add_argument("--godziny", type=float, default=LOOKBACK_HOURS)
     rp.add_argument("--ile", type=int, default=10, help="ile sygnałów pokazać")
     rp.add_argument("--json", action="store_true", help="wypisz raport jako JSON")
+    rp.add_argument("--swiezy", action="store_true", help="nie używaj raportu z pamięci")
     wp = sub.add_parser("portfel", help="ostatnie transakcje jednego portfela")
     wp.add_argument("adres")
     wp.add_argument("--godziny", type=float, default=72)
+    wy = sub.add_parser("wyniki", help="dziennik sygnałów: jak zachowały się po 24 h i 72 h")
+    wy.add_argument("--json", action="store_true")
 
     sub.add_parser("nowy-portfel", help="utwórz osobny portfel do handlu")
     sub.add_parser("eksport", help="pokaż klucz prywatny (tylko we własnym Terminalu)")
+    dp = sub.add_parser("diagnoza", help="szybki stan portfeli bez kredytów Helius")
+    dp.add_argument("--json", action="store_true")
     pp = sub.add_parser("pozycje", help="saldo portfela agenta i podpowiedzi wyjścia")
     pp.add_argument("--json", action="store_true")
     bp = sub.add_parser("kup", help="kup token za SOL (podgląd, potem akceptacja)")
@@ -571,7 +809,7 @@ def main():
     args = ap.parse_args()
 
     trading = {"nowy-portfel": "cmd_new_wallet", "eksport": "cmd_export", "pozycje": "cmd_positions",
-               "kup": "cmd_buy", "sprzedaj": "cmd_sell"}
+               "kup": "cmd_buy", "sprzedaj": "cmd_sell", "diagnoza": "cmd_diagnosis"}
     if args.cmd in trading:
         try:
             import handel
@@ -583,7 +821,7 @@ def main():
             sys.exit("Brakuje biblioteki do podpisu. Zainstaluj: python3 -m venv .venv && .venv/bin/pip install cryptography")
         getattr(handel, trading[args.cmd])(args)
         return
-    {"odkryj": cmd_discover, "raport": cmd_report, "portfel": cmd_wallet}[args.cmd](args)
+    {"odkryj": cmd_discover, "raport": cmd_report, "portfel": cmd_wallet, "wyniki": cmd_results}[args.cmd](args)
 
 
 if __name__ == "__main__":

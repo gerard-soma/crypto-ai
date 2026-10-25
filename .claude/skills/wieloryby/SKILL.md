@@ -17,14 +17,23 @@ Pracujesz w `/Users/gerardloba/Desktop/jupiter`. Dane zbiera `agent.py`. Ty inte
 - Sprzedaż: `python3 agent.py sprzedaj MINT --procent 50`, ta sama dwustopniowa ścieżka.
 - `python3 agent.py pozycje --json` pokazuje saldo i podpowiedzi wyjścia (cel, stop loss, wieloryby wychodzą). Sprawdzaj je na początku każdej sesji z `/wieloryby`.
 
+## Szybka diagnoza (0 kredytów Helius)
+
+Gdy Gerard pyta „jak sytuacja”, „szybka diagnoza” albo „co z portfelem”, uruchom tylko `python3 agent.py diagnoza` i omów wynik: portfel agenta z podpowiedziami wyjścia, portfel prywatny (wartość, zmiana 24 h, ostrzeżenia, pył), wiek ostatniego raportu, dziennik i budżet Helius. Nie uruchamiaj wtedy `odkryj` ani `raport --swiezy`. Raport i odkrywanie uruchamiaj tylko, gdy Gerard prosi o sygnały („w co wejść”, „co kupują wieloryby”) albo ostatni raport ma ponad 12 h i rozmowa dotyczy nowych zakupów.
+
+## Budżet Helius
+
+Agent pilnuje miesięcznego limitu (`HELIUS_MONTHLY_BUDGET`, licznik w `dane/helius.json`), odkrywania najwyżej raz na 20 h i pokazuje raport z pamięci, jeśli ma mniej niż 60 min. Nie obchodź tych limitów (`--wymus`, `--swiezy`) bez prośby Gerarda.
+
 ## Kroki
 
 1. Jeśli brakuje `.env` z `HELIUS_API_KEY`, poprowadź Gerarda przez sekcję „Klucz Helius” w `README.md` i przerwij.
 2. Jeśli istnieje portfel agenta, uruchom `python3 agent.py pozycje --json` i zacznij od pozycji, które mają podpowiedź wyjścia.
-3. Jeśli `dane/portfele.json` nie istnieje albo pole `updated` w większości wpisów jest starsze niż 3 dni, uruchom `python3 agent.py odkryj`.
+3. Jeśli `dane/portfele.json` nie istnieje, ma mniej niż 10 portfeli albo pole `updated` w większości wpisów jest starsze niż 3 dni, uruchom `python3 agent.py odkryj`. Odkrywanie przepuszcza tylko portfele, które są na plusie na co najmniej 2 tokenach, mają skuteczność od 30%, łączny wynik na plusie, trzymają tokeny co najmniej 1 h i robią najwyżej 20 zamian dziennie. Mała lista to uczciwy wynik, nie błąd: rośnie z każdym kolejnym odkrywaniem.
 4. Uruchom `python3 agent.py raport --json` (Gerard może podać inne okno, np. `--godziny 6`).
 5. Dla 1–3 najlepszych sygnałów bez czerwonych flag (dodruk, zamrożenie, płynność < $25k) sprawdź portfele, które je kupiły: `python3 agent.py portfel ADRES --godziny 72`. Szukasz odpowiedzi na pytanie, czy to przemyślany zakup, czy portfel kupuje wszystko po trochu.
-6. Napisz krótki werdykt po polsku. Jeśli Gerard chce kupić, przejdź ścieżką z „Zasad handlu”.
+6. Uruchom `python3 agent.py wyniki`. Jeśli dziennik ma już wyniki po 24 h albo 72 h, dodaj do werdyktu jedno zdanie, czy sygnały agenta dotąd dawały przewagę (mediana, ile doszło do 2×, ile spadło o 40%). Przy mniej niż ok. 20 sygnałach z wynikiem mów wprost, że to jeszcze za mało danych.
+7. Napisz krótki werdykt po polsku. Jeśli Gerard chce kupić, przejdź ścieżką z „Zasad handlu”.
 
 ## Jak doradzać przy budżecie około 25 USD
 

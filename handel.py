@@ -306,20 +306,17 @@ def run_swap(in_mint, out_mint, amount, preview, priv, pub, side, t, sol_usd):
 
 # --------------------------------------------------------------------------- pozycje
 
-def cmd_positions(args):
+def agent_positions():
     _, pub = load_key()
     wallet = b58encode(pub)
     sol, tokens = holdings(wallet)
     sol_usd = sol_price()
     info = token_info(tokens) if tokens else {}
     log = load_log()
-    exits = set()
-    reports = sorted(agent.REPORTS.glob("raport-*.json")) if agent.REPORTS.exists() else []
-    if reports:
-        exits = {e["mint"] for e in json.loads(reports[-1].read_text()).get("exits", [])}
+    latest = agent.latest_report()
+    exits = {e["mint"] for e in latest[1].get("exits", [])} if latest else set()
 
     total = sol * sol_usd
-    print(f"Portfel agenta {wallet}\n  SOL {sol:.4f} (~{fmt_usd(sol * sol_usd)})")
     rows = []
     for mint, pos in tokens.items():
         t = info.get(mint, {})
@@ -339,9 +336,91 @@ def cmd_positions(args):
             hint = "stop loss → rozważ sprzedaż całości"
         rows.append({"mint": mint, "symbol": t.get("symbol", short(mint)), "amount": pos["ui"], "value_usd": value,
                      "entry": entry, "price": price, "pnl_pct": pnl, "hint": hint})
-        pnl_s = f"{pnl:+.0f}%" if pnl is not None else "wejście nieznane"
-        print(f"  {t.get('symbol', short(mint)):<10} {fmt_usd(value):>7}  {pnl_s:<16} {hint}")
-    print(f"Razem ~{fmt_usd(total)} · zakupy w 24 h: {bought_last_24h():.2f} / {MAX_DAILY_USD:g} USD")
+    return {"wallet": wallet, "sol": sol, "sol_usd": sol_usd, "total_usd": total, "positions": rows}
+
+
+def print_positions(d):
+    print(f"Portfel agenta {d['wallet']}\n  SOL {d['sol']:.4f} (~{fmt_usd(d['sol'] * d['sol_usd'])})")
+    for r in d["positions"]:
+        pnl_s = f"{r['pnl_pct']:+.0f}%" if r["pnl_pct"] is not None else "wejście nieznane"
+        print(f"  {r['symbol']:<10} {fmt_usd(r['value_usd']):>7}  {pnl_s:<16} {r['hint']}")
+    print(f"Razem ~{fmt_usd(d['total_usd'])} · zakupy w 24 h: {bought_last_24h():.2f} / {MAX_DAILY_USD:g} USD")
+
+
+def cmd_positions(args):
+    d = agent_positions()
+    print_positions(d)
     if args.json:
-        print(json.dumps({"wallet": wallet, "sol": sol, "sol_usd": sol_usd, "total_usd": total,
-                          "positions": rows}, indent=1, ensure_ascii=False))
+        print(json.dumps(d, indent=1, ensure_ascii=False))
+
+
+# --------------------------------------------------------------------------- diagnoza
+
+DUST_USD = 0.5  # poniżej tej wartości token to pył: zostaje tylko kaucja ~0,002 SOL za konto
+
+
+def private_wallet(sol_usd):
+    """Prywatny portfel Gerarda: tylko odczyt po adresie publicznym z PRYWATNY_PORTFEL w .env."""
+    address = os.environ.get("PRYWATNY_PORTFEL", "").strip()
+    if not address:
+        return None
+    sol, tokens = holdings(address)
+    info = token_info(tokens) if tokens else {}
+    latest = agent.latest_report()
+    exits = {e["mint"] for e in latest[1].get("exits", [])} if latest else set()
+    rows, total = [], sol * sol_usd
+    for mint, pos in tokens.items():
+        t = info.get(mint, {})
+        value = pos["ui"] * (t.get("usdPrice") or 0)
+        total += value
+        # Zweryfikowane tokeny opakowane (WBTC) i akcje (SPCXx) zawsze mają emitenta z prawem dodruku i zamrożenia.
+        keep = ("płynność",) if t.get("isVerified") else ("dodrukować", "zamrozić", "płynność")
+        flags = [f for f in risk_flags(t, None)[0] if any(k in f for k in keep)]
+        if mint in exits:
+            flags.append("obserwowane portfele wychodzą")
+        rows.append({"mint": mint, "symbol": t.get("symbol", short(mint)), "value_usd": value,
+                     "change_24h": (t.get("stats24h") or {}).get("priceChange"),
+                     "dust": value < DUST_USD, "flags": flags})
+    rows.sort(key=lambda r: r["value_usd"], reverse=True)
+    return {"wallet": address, "sol": sol, "total_usd": total, "positions": rows}
+
+
+def cmd_diagnosis(args):
+    """Szybki stan bez kredytów Helius: oba portfele, wiek raportu, dziennik i budżet."""
+    agent_d = agent_positions()
+    priv = private_wallet(agent_d["sol_usd"])
+    latest = agent.latest_report()
+    report_age_h = (time.time() - agent.parse_ts(latest[1]["created"])) / 3600 if latest else None
+    journal = agent.journal_update(agent.load_journal())
+    stats = {k: agent.journal_stats(journal, k) for k in ("p24", "p72")}
+    usage = agent.load_usage().get(agent.month_key(), 0)
+    if args.json:
+        print(json.dumps({"agent": agent_d, "private": priv, "report_age_h": report_age_h,
+                          "journal_entries": len(journal), "journal_stats": stats,
+                          "helius_month": usage, "helius_budget": agent.HELIUS_BUDGET}, indent=1, ensure_ascii=False))
+        return
+    print_positions(agent_d)
+    print()
+    if priv:
+        print(f"Portfel prywatny {short(priv['wallet'])}  ~{fmt_usd(priv['total_usd'])} · SOL {priv['sol']:.4f}")
+        dust = [r for r in priv["positions"] if r["dust"]]
+        for r in priv["positions"]:
+            if r["dust"]:
+                continue
+            ch = f"{r['change_24h']:+.1f}%" if r["change_24h"] is not None else "?"
+            warn = f"  ⚠ {', '.join(r['flags'])}" if r["flags"] else ""
+            print(f"  {r['symbol']:<10} {fmt_usd(r['value_usd']):>7}  24 h {ch:>7}{warn}")
+        if dust:
+            print(f"  pył (< ${DUST_USD:g}): {', '.join(r['symbol'] for r in dust)} · zamknięcie kont zwróci "
+                  f"ok. {0.002 * len(dust):.3f} SOL")
+        if priv["sol"] < 0.005:
+            print("  ⚠ mało SOL na opłaty")
+    else:
+        print("Portfel prywatny: dodaj PRYWATNY_PORTFEL=<adres publiczny> do .env, żeby diagnoza go sprawdzała.")
+    print()
+    if report_age_h is not None:
+        print(f"Ostatni raport wielorybów: {report_age_h:.0f} h temu ({len(latest[1]['signals'])} sygnałów)")
+    st = stats["p24"]
+    print(f"Dziennik sygnałów: {len(journal)} wpisów" + (f" · po 24 h mediana {st['median_pct']:+}%, "
+          f"2×: {st['hit_2x_pct']}%, −40%: {st['stop_pct']}% ({st['n']} wyn.)" if st else " · wyniki jeszcze się zbierają"))
+    print(f"Helius w tym miesiącu: ~{usage:,} z budżetu {agent.HELIUS_BUDGET:,} kredytów (diagnoza: 0)")
