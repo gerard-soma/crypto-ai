@@ -21,6 +21,17 @@ Pracujesz w `/Users/gerardloba/Desktop/jupiter`. Dane zbiera `agent.py`. Ty inte
 
 Gdy Gerard pyta „jak sytuacja”, „szybka diagnoza” albo „co z portfelem”, uruchom tylko `python3 agent.py diagnoza` i omów wynik: portfel agenta z podpowiedziami wyjścia, portfel prywatny (wartość, zmiana 24 h, ostrzeżenia, pył), wiek ostatniego raportu, dziennik i budżet Helius. Nie uruchamiaj wtedy `odkryj` ani `raport --swiezy`. Raport i odkrywanie uruchamiaj tylko, gdy Gerard prosi o sygnały („w co wejść”, „co kupują wieloryby”) albo ostatni raport ma ponad 12 h i rozmowa dotyczy nowych zakupów.
 
+## Czuwanie i flipy (na razie tylko na sucho)
+
+`czuwaj.py` co kilka minut sprawdza ceny tokenów z `dane/czuwanie.json` (0 kredytów Helius) i testuje dwie strategie bez pieniędzy: **dołek** (spadek ≥ 15% w 1 h, ale nie więcej niż 35% w 4 h ani 25% w 24 h) i **wybicie** (wzrost ≥ 10% w 15 min). Wyjście symulowanego flipa: +20% cel, −12% stop albo po 4 h. Od wyniku odejmuje 3% kosztów. Pilnuje też prawdziwych pozycji agenta i wysyła powiadomienie przy celu albo stopie. Gerard uruchamia je we własnym Terminalu: `python3 agent.py czuwaj --co 2`.
+
+- `python3 agent.py flipy` pokazuje wyniki na sucho: liczbę flipów, odsetek na plusie, medianę i sumę po kosztach, osobno dla każdej strategii.
+- `python3 agent.py obserwuj` wypisuje listę tokenów ze zmianą w 15 min, 1 h i 4 h. `--dodaj MINT` dodaje token (tokeny z prawem dodruku albo zamrożenia odrzuca), `--usun SYMBOL` go usuwa.
+- Na listę dodawaj tylko tokeny z płynnością od ok. $100k. Proponuj je z raportów i dziennika wielorybów. Świeżych tokenów nie łapiemy: wygrywają tam boty, a zatwierdzanie ręczne jest za wolne.
+- Gdy Gerard pisze, że dostał powiadomienie, uruchom `flipy` i `obserwuj`, a przy pozycji agenta także `pozycje --json`. Powiedz, co się stało i czy reguła nadal obowiązuje.
+- Prawdziwy flip proponuj dopiero, gdy strategia ma co najmniej 20 zamkniętych flipów na sucho i dodatnią medianę po kosztach. Do tego czasu mów wprost, że to za mało danych.
+- Prawdziwy flip idzie zwykłą ścieżką `kup` z podglądem i zgodą na konkretny token i kwotę (najwyżej $3–5), z planem wyjścia takim jak w symulacji. Czuwanie niczego nie kupuje i nie wolno go do tego przerabiać.
+
 ## Budżet Helius
 
 Agent pilnuje miesięcznego limitu (`HELIUS_MONTHLY_BUDGET`, licznik w `dane/helius.json`), odkrywania najwyżej raz na 20 h i pokazuje raport z pamięci, jeśli ma mniej niż 60 min. Nie obchodź tych limitów (`--wymus`, `--swiezy`) bez prośby Gerarda.

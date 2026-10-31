@@ -37,6 +37,17 @@ python3 agent.py diagnoza      # szybki stan portfela agenta i prywatnego, bez k
 
 Każdy raport dopisuje swoje sygnały do `dane/dziennik.json` razem z ceną z chwili sygnału (ten sam token najwyżej raz na dobę). Raport i `wyniki` uzupełniają cenę po 24 h i 72 h. `wyniki` pokazuje medianę zmiany ceny, odsetek sygnałów, które doszły do 2×, i odsetek, które spadły o 40% lub więcej, osobno dla sygnałów z ostrzeżeniami, bez ostrzeżeń i dla KONSENSUSU. Po 1–2 tygodniach widać, czy kopiowanie tych portfeli daje przewagę, zanim wyda się na to pieniądze. Cena jest z chwili sprawdzenia, więc uruchamiaj raport albo `wyniki` codziennie.
 
+### Czuwanie i flipy na sucho
+
+```
+python3 agent.py obserwuj --dodaj MINT  # dodaj token do czuwania (bez prawa dodruku i zamrożenia)
+python3 agent.py obserwuj               # lista ze zmianą ceny w 15 min / 1 h / 4 h
+python3 agent.py czuwaj --co 2          # we własnym Terminalu: sprawdza ceny co 2 min, Ctrl+C kończy
+python3 agent.py flipy                  # wyniki flipów na sucho
+```
+
+Czuwanie bierze ceny z darmowego API Jupitera (0 kredytów Helius). Testuje dwie strategie bez pieniędzy: **dołek** (spadek ≥ 15% w 1 h, ale nie więcej niż 35% w 4 h ani 25% w 24 h) i **wybicie** (wzrost ≥ 10% w 15 min). Wchodzi tylko przy płynności od $50k. Symulowany flip kończy się przy +20%, −12% albo po 4 h, a od wyniku odejmuje 3% kosztów (opłaty, poślizg, wpływ na cenę). Wejścia i wyjścia trafiają do `dane/flipy.json` i do powiadomień na Macu. Czuwanie pilnuje też prawdziwych pozycji agenta i daje znać przy celu albo stopie (najwyżej raz na 6 h). Niczego nie kupuje. Progi zmienisz w `.env` (`FLIP_*`). Reguły wejścia potrzebują historii cen, więc pierwsze sygnały pojawią się po ok. 15 min (wybicie) i 1 h (dołek) czuwania.
+
 ## Handel z akceptacją
 
 Agent handluje z **osobnego portfela**, a nie z Twojego głównego. Dzięki temu nawet błąd albo zły sygnał może kosztować najwyżej to, co na nim leży.

@@ -6,6 +6,7 @@ Polecenia:
   python3 agent.py raport          # sprawdza, co te portfele kupują, i daje ranking sygnałów
   python3 agent.py portfel ADRES   # pokazuje ostatnie transakcje jednego portfela
   python3 agent.py wyniki          # dziennik sygnałów: jak zachowały się po 24 h i 72 h
+  python3 agent.py czuwaj --co 2   # pilnuje obserwowanych tokenów i testuje flipy na sucho
 
 Tylko odczyt danych: agent nie zna Twojego klucza prywatnego i niczego nie kupuje.
 """
@@ -806,7 +807,21 @@ def main():
     sp.add_argument("mint")
     sp.add_argument("--procent", type=float, default=100)
     sp.add_argument("--potwierdzam", action="store_true", help="wykonaj bez pytania (po Twojej zgodzie)")
+    cp = sub.add_parser("czuwaj", help="pilnuj obserwowanych tokenów i testuj flipy na sucho")
+    cp.add_argument("--co", type=float, help="powtarzaj co tyle minut (bez tego: jeden przebieg)")
+    cp.add_argument("--cicho", action="store_true", help="bez powiadomień na Macu")
+    ob = sub.add_parser("obserwuj", help="lista tokenów do czuwania")
+    ob.add_argument("--dodaj", metavar="MINT")
+    ob.add_argument("--usun", metavar="MINT_LUB_SYMBOL")
+    fp = sub.add_parser("flipy", help="wyniki flipów na sucho")
+    fp.add_argument("--json", action="store_true")
     args = ap.parse_args()
+
+    watching = {"czuwaj": "cmd_watch", "obserwuj": "cmd_list", "flipy": "cmd_flips"}
+    if args.cmd in watching:
+        import czuwaj
+        getattr(czuwaj, watching[args.cmd])(args)
+        return
 
     trading = {"nowy-portfel": "cmd_new_wallet", "eksport": "cmd_export", "pozycje": "cmd_positions",
                "kup": "cmd_buy", "sprzedaj": "cmd_sell", "diagnoza": "cmd_diagnosis"}
