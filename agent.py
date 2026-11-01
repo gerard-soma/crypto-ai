@@ -7,6 +7,7 @@ Polecenia:
   python3 agent.py portfel ADRES   # pokazuje ostatnie transakcje jednego portfela
   python3 agent.py wyniki          # dziennik sygnałów: jak zachowały się po 24 h i 72 h
   python3 agent.py czuwaj --co 2   # pilnuje obserwowanych tokenów i testuje flipy na sucho
+  python3 agent.py snajper         # łapie nowe tokeny pump.fun, domyślnie na sucho
 
 Tylko odczyt danych: agent nie zna Twojego klucza prywatnego i niczego nie kupuje.
 """
@@ -793,8 +794,10 @@ def main():
     wy = sub.add_parser("wyniki", help="dziennik sygnałów: jak zachowały się po 24 h i 72 h")
     wy.add_argument("--json", action="store_true")
 
-    sub.add_parser("nowy-portfel", help="utwórz osobny portfel do handlu")
-    sub.add_parser("eksport", help="pokaż klucz prywatny (tylko we własnym Terminalu)")
+    np_ = sub.add_parser("nowy-portfel", help="utwórz osobny portfel do handlu")
+    np_.add_argument("--snajper", action="store_true", help="osobny portfel snajpera")
+    ep = sub.add_parser("eksport", help="pokaż klucz prywatny (tylko we własnym Terminalu)")
+    ep.add_argument("--snajper", action="store_true", help="klucz portfela snajpera")
     dp = sub.add_parser("diagnoza", help="szybki stan portfeli bez kredytów Helius")
     dp.add_argument("--json", action="store_true")
     pp = sub.add_parser("pozycje", help="saldo portfela agenta i podpowiedzi wyjścia")
@@ -815,7 +818,24 @@ def main():
     ob.add_argument("--usun", metavar="MINT_LUB_SYMBOL")
     fp = sub.add_parser("flipy", help="wyniki flipów na sucho")
     fp.add_argument("--json", action="store_true")
+    sn = sub.add_parser("snajper", help="łap nowe tokeny pump.fun (domyślnie na sucho)")
+    sn.add_argument("--naprawde", action="store_true", help="handluj naprawdę z portfela snajpera, w limitach z .env")
+    sw = sub.add_parser("snajper-wyniki", help="wyniki snajpera")
+    sw.add_argument("--godziny", type=float, help="tylko ostatnie tyle godzin")
+    sw.add_argument("--json", action="store_true")
     args = ap.parse_args()
+
+    sniping = {"snajper": "cmd_run", "snajper-wyniki": "cmd_results"}
+    if args.cmd in sniping:
+        try:
+            import snajper
+        except ImportError:
+            venv_py = ROOT / ".venv" / "bin" / "python"
+            if venv_py.exists() and Path(sys.prefix).resolve() != (ROOT / ".venv").resolve():
+                os.execv(venv_py, [str(venv_py), *sys.argv])  # websockets i biblioteka do podpisu są w .venv
+            sys.exit("Brakuje bibliotek. Zainstaluj: .venv/bin/pip install websockets cryptography")
+        getattr(snajper, sniping[args.cmd])(args)
+        return
 
     watching = {"czuwaj": "cmd_watch", "obserwuj": "cmd_list", "flipy": "cmd_flips"}
     if args.cmd in watching:

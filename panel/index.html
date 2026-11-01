@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="panel-token" content="__PANEL_TOKEN__">
+<title>soma · jupiter</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20121%20141%27%3E%3Cpath%20fill%3D%27%23244A9A%27%20d%3D%27M84.7%2C70.43c-.02%2C18.97-15.4%2C34.34-34.36%2C34.36H0v36.07h50.34c38.88-.04%2C70.4-31.55%2C70.44-70.44v-8.68h-36.08v8.68Z%27/%3E%3Cpath%20fill%3D%27%23D46E7F%27%20d%3D%27M36.68%2C70.44c.02-18.97%2C15.39-34.34%2C34.35-34.36h47.77V0h-47.77C32.15.05.65%2C31.56.6%2C70.44v6.23h36.08v-6.23Z%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..900;1,14..32,300..900&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"><span class="wash wash-blue"></span><span class="wash wash-rose"></span></div>
+
+<div class="shell">
+  <aside class="side glass">
+    <div class="brand">
+      <svg class="wordmark" viewBox="0 0 736.38 140.87" fill="currentColor" aria-label="soma">
+        <path d="M84.7,70.43c-.02,18.97-15.4,34.34-34.36,34.36H0v36.07h50.34c38.88-.04,70.4-31.55,70.44-70.44v-8.68h-36.08v8.68Z"/>
+        <path d="M36.68,70.44c.02-18.97,15.39-34.34,34.35-34.36h47.77V0h-47.77C32.15.05.65,31.56.6,70.44v6.23h36.08v-6.23Z"/>
+        <path d="M566.31,69.25h-.03c-.63-38.35-31.9-69.25-70.4-69.25-20.81,0-39.5,9.03-52.39,23.37-12.89-14.35-31.59-23.37-52.39-23.37-38.5,0-69.77,30.9-70.4,69.25h-.03v71.26h36.08v-70.12c.02-18.96,15.4-34.32,34.36-34.32,18.97,0,34.36,15.39,34.35,34.36v70.08h36.08v-70.12c.02-18.96,15.4-34.32,34.36-34.31,18.97,0,34.36,15.39,34.35,34.36v70.08h36.08v-70.08h0s0,0,0,0v-1.18Z"/>
+        <path d="M736.36,69.65C735.94,31.12,704.58,0,665.95,0c-38.9,0-70.43,31.54-70.43,70.43,0,38.9,31.54,70.43,70.43,70.43v-36.08h0c-18.97,0-34.36-15.38-34.36-34.36,0-18.97,15.38-34.36,34.36-34.36,18.97,0,34.36,15.38,34.36,34.36v70.08h36.08v-70.86h-.02Z"/>
+        <path d="M222.73,0c-38.9,0-70.43,31.54-70.43,70.43,0,38.9,31.54,70.43,70.43,70.43,38.88-.05,70.38-31.55,70.43-70.43h0C293.17,31.54,261.63,0,222.73,0ZM257.09,70.44c0,18.97-15.39,34.36-34.36,34.35-18.97,0-34.36-15.39-34.35-34.36,0-18.97,15.39-34.36,34.36-34.35,18.96.03,34.33,15.39,34.35,34.36h0Z"/>
+      </svg>
+      <span class="eyebrow">jupiter · panel agenta</span>
+    </div>
+    <nav class="nav" aria-label="Widoki">
+      <button data-view="przeglad" class="active"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Przegląd</button>
+      <button data-view="czuwanie"><svg viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>Czuwanie i flipy</button>
+      <button data-view="snajper"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M22 12h-4M6 12H2M12 6V2M12 22v-4"/></svg>Snajper</button>
+      <button data-view="wieloryby"><svg viewBox="0 0 24 24"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>Wieloryby</button>
+      <button data-view="handel"><svg viewBox="0 0 24 24"><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></svg>Handel</button>
+    </nav>
+    <div class="side-foot">
+      <div id="svc-mini" class="svc-mini"></div>
+      <button id="theme" class="icon-btn" aria-label="Zmień motyw"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <section data-panel="przeglad" class="view active">
+      <header class="head">
+        <p class="eyebrow">Przegląd</p>
+        <h1>stan <em>portfeli</em></h1>
+        <p class="lead">Portfel agenta, Twój prywatny i to, co pracuje w tle. Odświeża się co minutę, bez kredytów Helius.</p>
+      </header>
+      <div id="kpis" class="kpis"></div>
+      <div class="grid two">
+        <div class="glass card"><div class="card-h"><h3>Portfel agenta</h3><span id="agent-addr" class="mono dim"></span></div><div id="agent-pos"></div></div>
+        <div class="glass card"><div class="card-h"><h3>Portfel prywatny</h3><span class="dim">tylko odczyt</span></div><div id="private-pos"></div></div>
+      </div>
+      <div class="grid two" id="svc-cards"></div>
+    </section>
+
+    <section data-panel="czuwanie" class="view">
+      <header class="head">
+        <p class="eyebrow">Czuwanie i flipy</p>
+        <h1>flipy <em>na sucho</em></h1>
+        <p class="lead">Co 2 minuty ceny z listy obserwowanych. Strategie dołek i wybicie, cel +20%, stop −12%, najwyżej 4 h. Niczego nie kupuje.</p>
+      </header>
+      <div id="flip-stats" class="kpis"></div>
+      <div class="grid two">
+        <div class="glass card">
+          <div class="card-h"><h3>Obserwowane tokeny</h3><span class="dim">zmiana 15 min / 1 h / 4 h</span></div>
+          <div id="watch"></div>
+          <form id="watch-add" class="row-form">
+            <label class="field"><span>Dodaj token (adres mint)</span><input name="mint" autocomplete="off" spellcheck="false" placeholder="np. 5dvXTZ5q…"></label>
+            <button class="btn ghost" type="submit">Dodaj</button>
+          </form>
+          <p id="watch-msg" class="msg"></p>
+        </div>
+        <div class="glass card">
+          <div class="card-h"><h3>Otwarte flipy</h3><span id="svc-czuwaj" class="svc-inline"></span></div>
+          <div id="flips-open"></div>
+          <h4 class="sub">Dziennik czuwania</h4>
+          <pre id="log-czuwaj" class="log"></pre>
+        </div>
+      </div>
+    </section>
+
+    <section data-panel="snajper" class="view">
+      <header class="head">
+        <p class="eyebrow">Snajper nowych tokenów</p>
+        <h1>pierwsze <em>minuty</em></h1>
+        <p class="lead">Nowe tokeny z pump.fun na żywo, ceny co 3 s. Na sucho testuje strategie start i rozpęd. Prawdziwy handel tylko z Twojego Terminala.</p>
+      </header>
+      <div id="sn-mode" class="glass banner"></div>
+      <div id="sn-stats" class="kpis"></div>
+      <div class="grid two">
+        <div class="glass card"><div class="card-h"><h3>Strategie</h3><div class="seg" id="sn-range"><button data-r="day" class="on">24 h</button><button data-r="all">całość</button></div></div><div id="sn-table"></div></div>
+        <div class="glass card"><div class="card-h"><h3>Otwarte pozycje</h3><span id="sn-open-n" class="dim"></span></div><div id="sn-open"></div></div>
+      </div>
+      <div class="grid two">
+        <div class="glass card"><div class="card-h"><h3>Ostatnio zamknięte</h3><label class="check"><input type="checkbox" id="sn-hide-start" checked> bez „start”</label></div><div id="sn-recent"></div></div>
+        <div class="glass card"><div class="card-h"><h3>Dziennik snajpera</h3><span id="svc-snajper" class="svc-inline"></span></div><pre id="log-snajper" class="log tall"></pre></div>
+      </div>
+    </section>
+
+    <section data-panel="wieloryby" class="view">
+      <header class="head">
+        <p class="eyebrow">Wieloryby</p>
+        <h1>co <em>kupują</em></h1>
+        <p class="lead">Ostatni zapisany raport i dziennik sygnałów. Nowy raport i odkrywanie zużywają kredyty Helius, więc uruchamiasz je ręcznie.</p>
+      </header>
+      <div class="actions">
+        <button class="btn primary" data-job="raport">Nowy raport</button>
+        <button class="btn ghost" data-job="odkryj">Odkryj portfele</button>
+        <span class="dim">Agent sam pilnuje budżetu Helius i limitu odkrywania raz na 20 h.</span>
+      </div>
+      <div id="jobs"></div>
+      <div class="glass card"><div class="card-h"><h3>Sygnały z raportu</h3><span id="rep-when" class="dim"></span></div><div id="signals"></div></div>
+      <div class="grid two">
+        <div class="glass card"><div class="card-h"><h3>Dziennik sygnałów</h3><span id="jr-n" class="dim"></span></div><div id="journal"></div></div>
+        <div class="glass card"><div class="card-h"><h3>Obserwowane portfele</h3></div><div id="wallets"></div></div>
+      </div>
+    </section>
+
+    <section data-panel="handel" class="view">
+      <header class="head">
+        <p class="eyebrow">Handel z portfela agenta</p>
+        <h1>podgląd, potem <em>decyzja</em></h1>
+        <p class="lead">Najpierw zawsze podgląd. Transakcja idzie dopiero po kliknięciu „Wykonaj”, a każda wymaga osobnego potwierdzenia. Limity z .env nadal obowiązują.</p>
+      </header>
+      <div class="grid two">
+        <form id="trade" class="glass card form">
+          <div class="seg wide" id="side"><button type="button" data-s="kup" class="on">Kup</button><button type="button" data-s="sprzedaj">Sprzedaj</button></div>
+          <label class="field"><span>Token (adres mint)</span><input name="mint" autocomplete="off" spellcheck="false" required></label>
+          <label class="field" data-for="kup"><span>Kwota w USD</span><input name="usd" type="number" min="0.5" step="0.5" value="3"></label>
+          <label class="field" data-for="sprzedaj" hidden><span>Ile procent pozycji</span><input name="procent" type="number" min="1" max="100" step="1" value="100"></label>
+          <button class="btn primary" type="submit">Pokaż podgląd</button>
+          <p class="dim small">Podgląd nic nie kosztuje. Ceny z Jupitera, poślizg i wpływ na cenę sprawdza skrypt.</p>
+        </form>
+        <div class="glass card">
+          <div class="card-h"><h3>Podgląd</h3></div>
+          <pre id="preview" class="log tall">Wybierz token i kwotę.</pre>
+          <div id="confirm" class="confirm" hidden>
+            <p id="confirm-text"></p>
+            <div class="actions"><button class="btn warm" id="do-trade">Wykonaj</button><button class="btn ghost" id="cancel-trade" type="button">Anuluj</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="glass card"><div class="card-h"><h3>Pozycje agenta</h3><span class="dim">kliknij, żeby przygotować sprzedaż</span></div><div id="trade-pos"></div></div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>

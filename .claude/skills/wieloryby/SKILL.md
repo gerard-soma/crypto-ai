@@ -32,6 +32,15 @@ Gdy Gerard pyta „jak sytuacja”, „szybka diagnoza” albo „co z portfelem
 - Prawdziwy flip proponuj dopiero, gdy strategia ma co najmniej 20 zamkniętych flipów na sucho i dodatnią medianę po kosztach. Do tego czasu mów wprost, że to za mało danych.
 - Prawdziwy flip idzie zwykłą ścieżką `kup` z podglądem i zgodą na konkretny token i kwotę (najwyżej $3–5), z planem wyjścia takim jak w symulacji. Czuwanie niczego nie kupuje i nie wolno go do tego przerabiać.
 
+## Snajper nowych tokenów
+
+`snajper.py` łapie nowe tokeny pump.fun (strumień PumpPortal plus ceny z Jupitera co 3 s, 0 kredytów Helius). Strategie **start** i **rozpęd** (+50% w 3 min od startu). Wyjście: połowa przy +100%, stop −30%, ruchomy stop 30%, najwyżej 10 min. Wyniki: `python3 agent.py snajper-wyniki` (`--godziny 24`, `--json`).
+
+- Na sucho (`python3 agent.py snajper`) Gerard uruchamia go we własnym Terminalu. Możesz go też uruchomić na kilka minut do testu.
+- Prawdziwy handel (`snajper --naprawde`) to świadoma decyzja Gerarda z 2026-10-31: bot handluje sam z osobnego portfela snajpera, bez zgody na każdą transakcję, ale tylko w limitach z `.env`. Uruchamia go wyłącznie Gerard we własnym oknie Terminala (wymaga wpisania TAK). Ty go nie uruchamiasz, nie zmieniasz limitów `SNAJPER_*` w `.env` ani `HARD_MAX_USD` w kodzie bez jego prośby i nie przelewasz środków na portfel snajpera.
+- Ten wyjątek dotyczy tylko portfela snajpera. Portfel agenta i portfel prywatny zostają przy zasadzie zgody na każdą transakcję.
+- Omawiając wyniki, porównuj rozpęd ze startem i mów wprost o medianie po kosztach. Pojedyncze +500% to nie dowód przewagi. Prawdziwe pieniądze ma sens dosypać dopiero przy kilkuset pozycjach na sucho z dodatnią medianą albo sumą.
+
 ## Budżet Helius
 
 Agent pilnuje miesięcznego limitu (`HELIUS_MONTHLY_BUDGET`, licznik w `dane/helius.json`), odkrywania najwyżej raz na 20 h i pokazuje raport z pamięci, jeśli ma mniej niż 60 min. Nie obchodź tych limitów (`--wymus`, `--swiezy`) bez prośby Gerarda.

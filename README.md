@@ -48,6 +48,38 @@ python3 agent.py flipy                  # wyniki flipów na sucho
 
 Czuwanie bierze ceny z darmowego API Jupitera (0 kredytów Helius). Testuje dwie strategie bez pieniędzy: **dołek** (spadek ≥ 15% w 1 h, ale nie więcej niż 35% w 4 h ani 25% w 24 h) i **wybicie** (wzrost ≥ 10% w 15 min). Wchodzi tylko przy płynności od $50k. Symulowany flip kończy się przy +20%, −12% albo po 4 h, a od wyniku odejmuje 3% kosztów (opłaty, poślizg, wpływ na cenę). Wejścia i wyjścia trafiają do `dane/flipy.json` i do powiadomień na Macu. Czuwanie pilnuje też prawdziwych pozycji agenta i daje znać przy celu albo stopie (najwyżej raz na 6 h). Niczego nie kupuje. Progi zmienisz w `.env` (`FLIP_*`). Reguły wejścia potrzebują historii cen, więc pierwsze sygnały pojawią się po ok. 15 min (wybicie) i 1 h (dołek) czuwania.
 
+### Snajper nowych tokenów (pump.fun)
+
+```
+python3 agent.py snajper                 # na sucho: łapie nowe tokeny, niczego nie kupuje
+python3 agent.py snajper-wyniki          # wyniki; --godziny 24 tylko ostatnia doba
+python3 agent.py nowy-portfel --snajper  # osobny portfel do prawdziwego handlu
+python3 agent.py snajper --naprawde      # we własnym Terminalu: handluje sam, w limitach z .env
+touch dane/snajper.STOP                  # wstrzymuje nowe zakupy (rm, żeby wznowić)
+```
+
+Nowe tokeny przychodzą na żywo z darmowego strumienia PumpPortal, a ceny co 3 s z Jupitera (0 kredytów Helius). Strategie: **start** kupuje pierwszą cenę każdego tokenu (punkt odniesienia), **rozpęd** kupuje, gdy w 3 min od startu cena wzrośnie o 50%. Tokeny, na które twórca wydał na starcie ponad 5 SOL, są pomijane. Wyjście: połowa przy +100%, stop −30%, po realizacji połowy ruchomy stop 30% od szczytu, najwyżej 10 min. Na sucho wejście i wyjście liczymy po cenie z następnego odczytu po sygnale, czyli ok. 3 s później, jak w prawdziwej transakcji. Koszty: 1,5% prowizji w każdą stronę, opłata sieci i 0,0015 SOL kaucji za konto tokenu. Kaucja wraca dopiero po zamknięciu konta, a przy stawce $1 to ok. 14%.
+
+Z `--naprawde` bot handluje sam z portfela snajpera (`~/.config/wieloryby/snajper.json`), bez pytania o każdą transakcję. Naprawdę handluje tylko jedna strategia (`SNAJPER_STRATEGIA`, domyślnie rozpęd), reszta dalej na sucho. Twarde limity: stawka `SNAJPER_USD` (domyślnie $1, w kodzie najwyżej $5), najwyżej 2 otwarte pozycje, 10 zakupów i $3 straty na dobę (otwarte pozycje liczą się jak stracone). Start wymaga wpisania TAK we własnym oknie Terminala. Po Ctrl+C otwarte pozycje zostają w `dane/snajper-otwarte.json`, a następne uruchomienie je domyka.
+
+Boty, które kupują w tym samym bloku co start tokenu, zawsze będą szybsze. Snajper łapie dopiero to, co dzieje się po kilku sekundach. Najpierw zbierz kilkaset pozycji na sucho i zobacz medianę.
+
+## Panel w przeglądarce
+
+```
+python3 panel.py        # albo dwuklik w Panel.command w Finderze
+```
+
+Panel otwiera się pod `http://127.0.0.1:8765/` (inny port: `PANEL_PORT=8800 python3 panel.py`). Pokazuje portfele, czuwanie z flipami, snajpera, raport wielorybów i dziennik sygnałów. Pozwala też:
+- włączać i wyłączać czuwanie i snajpera na sucho,
+- dodawać i usuwać obserwowane tokeny,
+- wstrzymywać zakupy snajpera,
+- kupować i sprzedawać z portfela agenta: najpierw podgląd, potem osobne „Wykonaj” dla każdej transakcji.
+
+Nowy raport i odkrywanie zużywają kredyty Helius, więc panel pyta przed ich uruchomieniem. Prawdziwego snajpera (`--naprawde`) panel nie uruchamia ani nie zatrzymuje, to zostaje w Terminalu.
+
+Panel słucha tylko na tym Macu, sprawdza nagłówek Host i wymaga klucza, który dostaje tylko jego własna strona. Inne strony otwarte w przeglądarce nie mogą więc wywołać jego poleceń. Zamknięcie panelu (Ctrl+C) zatrzymuje też to, co uruchomił.
+
 ## Handel z akceptacją
 
 Agent handluje z **osobnego portfela**, a nie z Twojego głównego. Dzięki temu nawet błąd albo zły sygnał może kosztować najwyżej to, co na nim leży.
@@ -83,7 +115,7 @@ Swap idzie przez Jupiter Ultra API (to samo co na jup.ag). Opłata Jupitera to o
 
 W Claude Code wpisz `/wieloryby`. Claude uruchomi raport, sprawdzi portfele stojące za najlepszymi sygnałami i podpowie po polsku, czy warto wejść, za ile przy Twoim budżecie i kiedy wyjść.
 
-Wymagania: Python 3.10+. Raporty działają bez instalowania czegokolwiek. Handel potrzebuje biblioteki `cryptography` do podpisu, którą już zainstalowałem w `.venv`. Na nowym komputerze: `python3 -m venv .venv && .venv/bin/pip install cryptography`.
+Wymagania: Python 3.10+. Raporty działają bez instalowania czegokolwiek. Handel potrzebuje biblioteki `cryptography` do podpisu, którą już zainstalowałem w `.venv`. Snajper potrzebuje jeszcze `websockets`. Na nowym komputerze: `python3 -m venv .venv && .venv/bin/pip install cryptography websockets`.
 
 ## Czego się spodziewać
 

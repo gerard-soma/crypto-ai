@@ -23,6 +23,7 @@ from agent import SOL, cfg, fmt_usd, jup_get, http_json, risk_flags, short, sol_
 
 KEY_DIR = Path.home() / ".config" / "wieloryby"
 KEY_FILE = KEY_DIR / "portfel.json"
+SNIPER_KEY_FILE = KEY_DIR / "snajper.json"  # osobny portfel snajpera, handluje bez akceptacji każdej transakcji
 TRADE_LOG = agent.DATA / "transakcje.json"
 
 MAX_TRADE_USD = cfg("MAX_TRADE_USD", 10.0)        # największy pojedynczy zakup
@@ -48,43 +49,53 @@ def b58encode(b):
 
 # --------------------------------------------------------------------------- portfel
 
-def load_key():
-    if not KEY_FILE.exists():
-        sys.exit("Agent nie ma jeszcze portfela. Utwórz go: python3 agent.py nowy-portfel")
-    raw = bytes(json.loads(KEY_FILE.read_text()))
+def key_file(args=None):
+    """Portfel agenta albo, z --snajper, osobny portfel snajpera."""
+    return SNIPER_KEY_FILE if getattr(args, "snajper", False) else KEY_FILE
+
+
+def load_key(path=KEY_FILE):
+    if not path.exists():
+        flag = " --snajper" if path == SNIPER_KEY_FILE else ""
+        sys.exit(f"Nie ma jeszcze tego portfela. Utwórz go: python3 agent.py nowy-portfel{flag}")
+    raw = bytes(json.loads(path.read_text()))
     priv = Ed25519PrivateKey.from_private_bytes(raw[:32])
     pub = priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     if pub != raw[32:64]:
-        sys.exit(f"Plik {KEY_FILE} jest uszkodzony (klucz publiczny się nie zgadza).")
+        sys.exit(f"Plik {path} jest uszkodzony (klucz publiczny się nie zgadza).")
     return priv, pub
 
 
 def cmd_new_wallet(args):
-    if KEY_FILE.exists():
-        _, pub = load_key()
-        sys.exit(f"Portfel agenta już istnieje: {b58encode(pub)}\nNie nadpisuję go, żeby nie stracić środków.")
+    path = key_file(args)
+    name = "snajpera" if path == SNIPER_KEY_FILE else "agenta"
+    if path.exists():
+        _, pub = load_key(path)
+        sys.exit(f"Portfel {name} już istnieje: {b58encode(pub)}\nNie nadpisuję go, żeby nie stracić środków.")
     priv = Ed25519PrivateKey.generate()
     from cryptography.hazmat.primitives.serialization import NoEncryption, PrivateFormat
     seed = priv.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
     pub = priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     KEY_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(KEY_DIR, stat.S_IRWXU)
-    fd = os.open(KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(list(seed + pub), f)  # format Solana CLI: 64 bajty
-    print(f"Utworzyłem portfel agenta:\n\n  {b58encode(pub)}\n")
-    print(f"Klucz prywatny: {KEY_FILE} (tylko Ty masz do niego dostęp).")
-    print("Przelej na ten adres SOL ze swojego portfela (np. 25 USD). Zrób kopię klucza:")
-    print("uruchom `python3 agent.py eksport` w osobnym oknie Terminala i zaimportuj klucz do Phantoma.")
+    flag = " --snajper" if path == SNIPER_KEY_FILE else ""
+    print(f"Utworzyłem portfel {name}:\n\n  {b58encode(pub)}\n")
+    print(f"Klucz prywatny: {path} (tylko Ty masz do niego dostęp).")
+    print("Przelej na ten adres tylko tyle SOL, ile możesz stracić. Zrób kopię klucza:")
+    print(f"uruchom `python3 agent.py eksport{flag}` w osobnym oknie Terminala i zaimportuj klucz do Phantoma.")
 
 
 def cmd_export(args):
     if not sys.stdin.isatty():
         sys.exit("Eksport działa tylko w Twoim własnym oknie Terminala, żeby klucz nie trafił do żadnej rozmowy.")
-    priv, pub = load_key()
+    path = key_file(args)
+    priv, pub = load_key(path)
     if input("Klucz prywatny pozwala zabrać wszystkie środki. Pokazać? Wpisz TAK: ").strip().upper() != "TAK":
         return
-    print(f"\nAdres: {b58encode(pub)}\nKlucz prywatny (import do Phantoma / Solflare):\n{b58encode(bytes(json.loads(KEY_FILE.read_text())))}\n")
+    print(f"\nAdres: {b58encode(pub)}\nKlucz prywatny (import do Phantoma / Solflare):\n{b58encode(bytes(json.loads(path.read_text())))}\n")
 
 
 def holdings(address):
