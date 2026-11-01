@@ -289,3 +289,124 @@ async function refresh() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 const start = location.hash.slice(1);
 show(loaders[start] ? start : 'przeglad');
+
+// ------------------------------------------------------------------ czat z asystentem (Claude Code, tylko odczyt)
+const chat = { session: null, history: [], busy: false };
+try { const saved = JSON.parse(localStorage.getItem('panel-chat') || 'null'); if (saved) Object.assign(chat, saved, { busy: false }); } catch (e) {}
+const saveChat = () => { try { localStorage.setItem('panel-chat', JSON.stringify({ session: chat.session, history: chat.history.slice(-40) })); } catch (e) {} };
+
+const TRADE_RX = /\[\[(kup|sprzedaj) ([1-9A-HJ-NP-Za-km-z]{32,44}) (\d{1,3}(?:\.\d+)?)\]\]/g;
+function inline(t) {
+  return t.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+// Najpierw escapujemy całość, potem dokładamy tylko własne, bezpieczne znaczniki.
+function md(src) {
+  const out = [], lines = esc(src).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.startsWith('```')) {
+      const code = []; while (++i < lines.length && !lines[i].startsWith('```')) code.push(lines[i]);
+      out.push(`<pre><code>${code.join('\n')}</code></pre>`); continue;
+    }
+    if (/^\s*\|.*\|\s*$/.test(l)) {
+      const rows = []; while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(lines[i++]); i--;
+      const cells = (r) => r.trim().replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim()));
+      const body = rows.filter((r) => !/^\s*\|[\s:|-]+\|\s*$/.test(r));
+      out.push(`<table><thead><tr>${cells(body[0]).map((c) => `<th>${c}</th>`).join('')}</tr></thead><tbody>${
+        body.slice(1).map((r) => `<tr>${cells(r).map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`); continue;
+    }
+    if (/^\s*([-*]|\d+\.) /.test(l)) {
+      const ordered = /^\s*\d+\./.test(l), items = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.) /.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*]|\d+\.) /, '')); i--;
+      out.push(`<${ordered ? 'ol' : 'ul'}>${items.map((x) => `<li>${inline(x)}</li>`).join('')}</${ordered ? 'ol' : 'ul'}>`); continue;
+    }
+    if (/^#{1,4} /.test(l)) { out.push(`<h4>${inline(l.replace(/^#+ /, ''))}</h4>`); continue; }
+    if (!l.trim()) continue;
+    const para = [l]; while (i + 1 < lines.length && lines[i + 1].trim() && !/^(```|\s*\||\s*([-*]|\d+\.) |#{1,4} )/.test(lines[i + 1])) para.push(lines[++i]);
+    out.push(`<p>${inline(para.join('<br>'))}</p>`);
+  }
+  return out.join('').replace(TRADE_RX, (m, side, mint, amt) =>
+    `</p><div class="trade-chip"><button class="btn warm sm" data-chat-trade="${side}" data-mint="${mint}" data-amt="${amt}">Przygotuj: ${side === 'kup' ? `kup za $${amt}` : `sprzedaj ${amt}%`}</button><span class="dim">${short(mint)}</span></div><p>`)
+    .replace(/<p><\/p>/g, '');
+}
+
+function renderMsg(m) {
+  if (m.role === 'user') return `<div class="msg-u">${esc(m.text)}</div>`;
+  const tools = (m.tools || []).map((t) => `<span class="tag ${t.blocked ? 'bad' : 'line'}" title="${esc(t.what)}">${esc(t.what || t.name)}</span>`).join('');
+  return `<div class="msg-a">${tools ? `<div class="msg-tools">${tools}</div>` : ''}${m.text ? md(m.text) : m.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : ''}${m.error ? `<p class="msg-err">${esc(m.error)}</p>` : ''}</div>`;
+}
+function renderChat() {
+  const log = $('#chat-log');
+  log.innerHTML = chat.history.length ? chat.history.map(renderMsg).join('')
+    : '<div class="msg-a"><p>Pytaj o portfele, flipy, snajpera albo raport wielorybów. Sprawdzam dane na bieżąco, ale niczego nie kupuję ani nie sprzedaję.</p></div>';
+  $('#chat-hints').hidden = chat.history.length > 0;
+  log.scrollTop = log.scrollHeight;
+}
+
+function openChat(open) {
+  $('#chat').hidden = !open;
+  $('#chat-open').classList.toggle('hide', open);
+  if (open) { renderChat(); $('#chat-form').q.focus(); }
+}
+$('#chat-open').onclick = () => openChat(true);
+$('#chat-close').onclick = () => openChat(false);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#chat').hidden) openChat(false); });
+$('#chat-new').onclick = () => { if (chat.busy) return; chat.session = null; chat.history = []; saveChat(); renderChat(); };
+$$('#chat-hints button').forEach((b) => b.onclick = () => ask(b.textContent));
+$('#chat-form').onsubmit = (e) => { e.preventDefault(); ask(e.target.q.value); };
+$('#chat-form').q.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(e.target.value); } });
+
+async function ask(text) {
+  text = text.trim();
+  if (!text || chat.busy) return;
+  chat.busy = true;
+  $('#chat-form').q.value = '';
+  $('#chat-form button').disabled = true;
+  chat.history.push({ role: 'user', text });
+  const reply = { role: 'assistant', text: '', tools: [], pending: true };
+  chat.history.push(reply);
+  renderChat();
+  try {
+    const r = await fetch('/api/czat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Panel-Token': TOKEN }, body: JSON.stringify({ message: text, session: chat.session }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Błąd ${r.status}`);
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', frame = 0;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        if (!line.trim()) continue;
+        const ev = JSON.parse(line);
+        if (ev.type === 'session') chat.session = ev.session;
+        else if (ev.type === 'turn' && reply.text && !reply.text.endsWith('\n\n')) reply.text += '\n\n';
+        else if (ev.type === 'text') reply.text += ev.text;
+        else if (ev.type === 'tool') reply.tools.push({ name: ev.name, what: ev.what });
+        else if (ev.type === 'blocked' && reply.tools.length) reply.tools[reply.tools.length - 1].blocked = true;
+        else if (ev.type === 'error' || (ev.type === 'done' && !ev.ok)) reply.error = ev.text || ev.error || 'Asystent nie odpowiedział.';
+      }
+      cancelAnimationFrame(frame); frame = requestAnimationFrame(renderChat);
+    }
+  } catch (e) { reply.error = e.message; }
+  reply.text = reply.text.trim();
+  reply.pending = false;
+  if (!reply.text && !reply.error) reply.error = 'Pusta odpowiedź. Spróbuj jeszcze raz.';
+  chat.busy = false;
+  $('#chat-form button').disabled = false;
+  saveChat(); renderChat();
+}
+
+// Przycisk z odpowiedzi tylko wypełnia formularz w Handlu. Podgląd i „Wykonaj” zostają po Twojej stronie.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-chat-trade]');
+  if (!b) return;
+  setSide(b.dataset.chatTrade);
+  const f = $('#trade');
+  f.mint.value = b.dataset.mint;
+  if (b.dataset.chatTrade === 'kup') f.usd.value = b.dataset.amt; else f.procent.value = Math.min(100, Number(b.dataset.amt));
+  openChat(false);
+  show('handel');
+  toast('Formularz wypełniony. Sprawdź podgląd, zanim cokolwiek wykonasz.');
+});

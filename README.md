@@ -78,6 +78,8 @@ Panel otwiera się pod `http://127.0.0.1:8765/` (inny port: `PANEL_PORT=8800 pyt
 
 Nowy raport i odkrywanie zużywają kredyty Helius, więc panel pyta przed ich uruchomieniem. Prawdziwego snajpera (`--naprawde`) panel nie uruchamia ani nie zatrzymuje, to zostaje w Terminalu.
 
+**Czat z asystentem** (przycisk „Asystent” w prawym dolnym rogu) korzysta z Claude Code zainstalowanego na Macu, więc nie potrzebuje osobnego klucza API i liczy się do Twojego planu. Asystent zna skill `/wieloryby` i ma tylko odczyt. Może uruchamiać `diagnoza`, `pozycje`, `wyniki`, `flipy`, `obserwuj`, `snajper-wyniki`, `raport` i `portfel` oraz czytać pliki projektu, bez `.env`. Każde narzędzie sprawdza przed wykonaniem strażnik `panel_guard.py`, bo Claude Code sam przepuszcza proste polecenia do odczytu, takie jak `ls` czy `cat`. Gdy asystent zaproponuje transakcję, pojawia się przycisk „Przygotuj”. Wypełnia on tylko formularz w zakładce Handel, a podgląd i „Wykonaj” zostają po Twojej stronie. Historia rozmowy zostaje w przeglądarce, a „Nowa rozmowa” zaczyna od zera.
+
 Panel słucha tylko na tym Macu, sprawdza nagłówek Host i wymaga klucza, który dostaje tylko jego własna strona. Inne strony otwarte w przeglądarce nie mogą więc wywołać jego poleceń. Zamknięcie panelu (Ctrl+C) zatrzymuje też to, co uruchomił.
 
 ## Handel z akceptacją

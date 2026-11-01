@@ -157,6 +157,96 @@ def start_job(kind, args, timeout=900):
     return jobs[jid]
 
 
+# --------------------------------------------------------------------------- czat z asystentem
+
+CLAUDE = os.environ.get("PANEL_CLAUDE") or next(
+    (str(c) for c in (Path.home() / ".local/bin/claude", Path("/opt/homebrew/bin/claude"), Path("/usr/local/bin/claude"))
+     if c.exists()), "claude")
+CHAT_TIMEOUT_S = 300
+chat_lock = threading.Lock()
+
+# Asystent w panelu tylko czyta. Handel idzie przez zakładkę Handel (podgląd + Twoje „Wykonaj”).
+CHAT_READ_ONLY = [
+    "Read", "Grep", "Glob", "Skill",
+    "Bash(python3 agent.py diagnoza*)", "Bash(python3 agent.py pozycje*)", "Bash(python3 agent.py wyniki*)",
+    "Bash(python3 agent.py flipy*)", "Bash(python3 agent.py snajper-wyniki*)", "Bash(python3 agent.py raport*)",
+    "Bash(python3 agent.py portfel *)", "Bash(python3 agent.py obserwuj)",
+]
+CHAT_DENY = ["Read(~/.config/**)", "Read(./.env)", "Read(.env)", "Bash(*--potwierdzam*)", "Bash(*eksport*)",
+             "Bash(*kup*)", "Bash(*sprzedaj*)", "Bash(*--naprawde*)", "Bash(*odkryj*)", "Bash(*--swiezy*)", "Edit", "Write"]
+CHAT_PROMPT = """Rozmawiasz z Gerardem w lokalnym panelu agenta wielorybów (jupiter). Odpowiadaj po polsku, krótko i konkretnie.
+Masz tylko odczyt: polecenia python3 agent.py diagnoza / pozycje --json / wyniki / flipy / snajper-wyniki / raport /
+obserwuj oraz pliki projektu. Nie kupujesz, nie sprzedajesz, nie uruchamiasz odkrywania ani prawdziwego snajpera
+i nie czytasz .env ani ~/.config/wieloryby/. Jeśli coś jest zablokowane, powiedz to wprost i nie szukaj obejścia.
+Gdy proponujesz konkretną transakcję z portfela agenta, dopisz w osobnej linii znacznik [[kup MINT KWOTA_USD]]
+albo [[sprzedaj MINT PROCENT]]. Panel zamieni go na przycisk, który tylko wypełni formularz w zakładce Handel,
+a Gerard sam obejrzy podgląd i zdecyduje. Bez znacznika nic nie da się wykonać, więc używaj go tylko przy realnej propozycji.
+Kwoty podawaj w USD, wyniki z medianą i liczbą prób. Nie obiecuj zysków."""
+
+
+# Strażnik sprawdza każde narzędzie przed wykonaniem: Claude Code sam przepuszcza część poleceń do odczytu (ls, cat).
+CHAT_SETTINGS = {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [
+    {"type": "command", "command": f"{sys.executable} -I {ROOT / 'panel_guard.py'}"}]}]}}
+
+
+def chat_command(message, session, new):
+    cmd = [CLAUDE, "-p", message, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+           "--permission-mode", "default", "--setting-sources", "project,local", "--strict-mcp-config",
+           "--tools", "Bash", "Read", "Grep", "Glob", "Skill",
+           "--allowedTools", *CHAT_READ_ONLY, "--disallowedTools", *CHAT_DENY,
+           "--append-system-prompt", CHAT_PROMPT, "--settings", json.dumps(CHAT_SETTINGS)]
+    cmd += ["--session-id", session] if new else ["--resume", session]
+    return cmd
+
+
+def chat_events(message, session, new):
+    """Przekłada strumień Claude Code na proste zdarzenia dla przeglądarki."""
+    proc = subprocess.Popen(chat_command(message, session, new), cwd=ROOT, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, env={**os.environ, "CLAUDE_CODE_ENTRYPOINT": "panel"})
+    killer = threading.Timer(CHAT_TIMEOUT_S, proc.kill)
+    killer.start()
+    try:
+        yield {"type": "session", "session": session}
+        for line in proc.stdout:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            t = e.get("type")
+            if t == "stream_event":
+                ev = e.get("event") or {}
+                d = ev.get("delta") or {}
+                if ev.get("type") == "content_block_delta" and d.get("type") == "text_delta" and not e.get("parent_tool_use_id"):
+                    yield {"type": "text", "text": d.get("text", "")}
+                elif ev.get("type") == "message_start" and not e.get("parent_tool_use_id"):
+                    yield {"type": "turn"}
+            elif t == "assistant":
+                for c in (e.get("message") or {}).get("content") or []:
+                    if c.get("type") == "tool_use":
+                        inp = c.get("input") or {}
+                        what = inp.get("command") or inp.get("file_path") or inp.get("pattern") or inp.get("skill") or ""
+                        yield {"type": "tool", "name": c.get("name"), "what": str(what)[:160]}
+            elif t == "user":
+                for c in (e.get("message") or {}).get("content") or []:
+                    if isinstance(c, dict) and c.get("type") == "tool_result" and c.get("is_error"):
+                        text = c.get("content")
+                        text = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
+                        if any(w in text.lower() for w in ("zablokowane", "permission", "denied", "not allowed")):
+                            yield {"type": "blocked", "text": "Zablokowane w panelu (tylko odczyt)."}
+            elif t == "result":
+                yield {"type": "done", "ok": not e.get("is_error"), "seconds": round((e.get("duration_ms") or 0) / 1000, 1),
+                       "error": e.get("result") if e.get("is_error") else None}
+        proc.wait(10)
+        if proc.returncode not in (0, None):
+            err = proc.stderr.read()[-600:]
+            if err.strip():
+                yield {"type": "error", "text": err.strip()}
+    finally:
+        killer.cancel()
+        if proc.poll() is None:
+            proc.kill()
+
+
 # --------------------------------------------------------------------------- dane dla widoków
 
 def watchlist():
@@ -223,6 +313,41 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(401, {"error": "brak klucza panelu"})
         self.api("GET", url.path[5:], parse_qs(url.query), {})
 
+    def stream_chat(self, body):
+        message = str(body.get("message") or "").strip()[:4000]
+        session = str(body.get("session") or "")
+        try:
+            import uuid
+            uuid.UUID(session)
+            new = False
+        except ValueError:
+            import uuid
+            session, new = str(uuid.uuid4()), True
+        if not message:
+            return self.send(400, {"error": "Pusta wiadomość."})
+        if not chat_lock.acquire(blocking=False):
+            return self.send(409, {"error": "Asystent jeszcze odpowiada na poprzednie pytanie."})
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            events = chat_events(message, session, new)
+            try:
+                for ev in events:
+                    self.wfile.write((json.dumps(ev, ensure_ascii=False) + "\n").encode())
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass   # przeglądarka zamknęła połączenie; generator zabije proces w finally
+            finally:
+                events.close()
+        except FileNotFoundError:
+            self.wfile.write((json.dumps({"type": "error", "text": "Nie znalazłem Claude Code (polecenie claude)."}) + "\n").encode())
+        finally:
+            chat_lock.release()
+            self.close_connection = True
+
     def do_POST(self):
         if not self.allowed_host() or not self.authorized():
             return self.send(401, {"error": "brak klucza panelu"})
@@ -233,6 +358,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
         except ValueError:
             return self.send(400, {"error": "zły JSON"})
+        if urlparse(self.path).path == "/api/czat":
+            return self.stream_chat(body)
         self.api("POST", urlparse(self.path).path[5:], {}, body)
 
     def static(self, url):

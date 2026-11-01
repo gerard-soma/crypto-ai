@@ -145,6 +145,27 @@
     </section>
   </main>
 </div>
+<button id="chat-open" class="chat-fab" aria-label="Otwórz czat z asystentem"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Asystent</span></button>
+<aside id="chat" class="chat glass" hidden aria-label="Czat z asystentem">
+  <header class="chat-h">
+    <div><p class="eyebrow">Asystent</p><h3>zapytaj o <em>portfel</em></h3></div>
+    <div class="chat-h-actions">
+      <button id="chat-new" class="btn ghost sm" type="button">Nowa rozmowa</button>
+      <button id="chat-close" class="icon-btn" type="button" aria-label="Zamknij czat"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+  </header>
+  <div id="chat-log" class="chat-log" aria-live="polite"></div>
+  <div id="chat-hints" class="chat-hints">
+    <button type="button">Jak wygląda portfel agenta?</button>
+    <button type="button">Co pokazuje snajper z ostatniej doby?</button>
+    <button type="button">Czy któraś pozycja jest przy stopie albo celu?</button>
+  </div>
+  <form id="chat-form" class="chat-form">
+    <textarea name="q" rows="2" placeholder="Napisz pytanie… (Enter wysyła, Shift+Enter nowa linia)" required></textarea>
+    <button class="btn primary" type="submit" aria-label="Wyślij"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+  </form>
+  <p class="chat-note">Asystent ma tylko odczyt. Transakcję może przygotować w zakładce Handel, a wykonujesz ją Ty.</p>
+</aside>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script src="/app.js"></script>
 </body>
