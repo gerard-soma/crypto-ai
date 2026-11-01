@@ -8,6 +8,7 @@ Polecenia:
   python3 agent.py wyniki          # dziennik sygnałów: jak zachowały się po 24 h i 72 h
   python3 agent.py czuwaj --co 2   # pilnuje obserwowanych tokenów i testuje flipy na sucho
   python3 agent.py snajper         # łapie nowe tokeny pump.fun, domyślnie na sucho
+  python3 agent.py snajper-test    # sprawdza reguły snajpera na nagraniach
 
 Tylko odczyt danych: agent nie zna Twojego klucza prywatnego i niczego nie kupuje.
 """
@@ -816,6 +817,7 @@ def main():
     ob = sub.add_parser("obserwuj", help="lista tokenów do czuwania")
     ob.add_argument("--dodaj", metavar="MINT")
     ob.add_argument("--usun", metavar="MINT_LUB_SYMBOL")
+    ob.add_argument("--auto", action="store_true", help="odśwież listę automatyczną z Jupitera teraz")
     fp = sub.add_parser("flipy", help="wyniki flipów na sucho")
     fp.add_argument("--json", action="store_true")
     sn = sub.add_parser("snajper", help="łap nowe tokeny pump.fun (domyślnie na sucho)")
@@ -823,12 +825,16 @@ def main():
     sw = sub.add_parser("snajper-wyniki", help="wyniki snajpera")
     sw.add_argument("--godziny", type=float, help="tylko ostatnie tyle godzin")
     sw.add_argument("--json", action="store_true")
+    st = sub.add_parser("snajper-test", help="sprawdź reguły snajpera na nagraniach (strojenie i sprawdzian)")
+    st.add_argument("--dni", type=int, help="tylko ostatnie tyle dni nagrań")
     args = ap.parse_args()
 
-    sniping = {"snajper": "cmd_run", "snajper-wyniki": "cmd_results"}
+    sniping = {"snajper": "cmd_run", "snajper-wyniki": "cmd_results", "snajper-test": "cmd_test"}
     if args.cmd in sniping:
         try:
             import snajper
+            if args.cmd == "snajper-test":
+                import snajper_test as snajper
         except ImportError:
             venv_py = ROOT / ".venv" / "bin" / "python"
             if venv_py.exists() and Path(sys.prefix).resolve() != (ROOT / ".venv").resolve():

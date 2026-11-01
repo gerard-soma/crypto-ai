@@ -191,6 +191,69 @@ def impact_pct(order):
     return abs(float(order.get("priceImpactPct") or 0)) * 100
 
 
+# --------------------------------------------------------------------------- zwrot kaucji za konta tokenów
+
+TOKEN_PROGRAMS = {"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"}
+
+
+def b58decode(s):
+    n = 0
+    for ch in s:
+        n = n * 58 + B58.index(ch)
+    body = n.to_bytes((n.bit_length() + 7) // 8, "big") if n else b""
+    return b"\0" * (len(s) - len(s.lstrip("1"))) + body
+
+
+def rpc(method, params):
+    """Zwykłe RPC Solany: Helius, gdy jest klucz (1 kredyt za wywołanie), inaczej publiczny węzeł."""
+    url = (f"https://mainnet.helius-rpc.com/?api-key={agent.HELIUS_KEY}" if agent.HELIUS_KEY
+           else "https://api.mainnet-beta.solana.com")
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    req = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        out = json.loads(r.read().decode())
+    if out.get("error"):
+        raise agent.ApiError(0, json.dumps(out["error"])[:300], method)
+    return out["result"]
+
+
+def shortvec_enc(n):
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        out.append(b | 0x80 if n else b)
+        if not n:
+            return bytes(out)
+
+
+def close_accounts_tx(pub, accounts, blockhash):
+    """Transakcja zamykająca puste konta tokenów: [(adres konta, program tokenu)]. Kaucja wraca na portfel."""
+    programs = sorted({p for _, p in accounts})
+    keys = [pub] + [b58decode(a) for a, _ in accounts] + [b58decode(p) for p in programs]
+    header = bytes([1, 0, len(programs)])   # 1 podpis, programy tylko do odczytu na końcu
+    ixs = b"".join(bytes([1 + len(accounts) + programs.index(p)]) + shortvec_enc(3) + bytes([1 + i, 0, 0])
+                   + shortvec_enc(1) + bytes([9])   # CloseAccount: konto, odbiorca kaucji, właściciel
+                   for i, (_, p) in enumerate(accounts))
+    return (header + shortvec_enc(len(keys)) + b"".join(keys) + b58decode(blockhash)
+            + shortvec_enc(len(accounts)) + ixs)
+
+
+def close_empty_accounts(priv, pub, limit=8):
+    """Zamyka puste konta tokenów portfela. Zwraca (ile kont, podpis) albo (0, None), gdy nie ma czego zamykać."""
+    h = jup_get(f"/ultra/v1/holdings/{b58encode(pub)}")
+    empty = [(a["account"], a["programId"]) for accts in (h.get("tokens") or {}).values() for a in accts
+             if int(a.get("amount") or 0) == 0 and a.get("programId") in TOKEN_PROGRAMS][:limit]
+    if not empty:
+        return 0, None
+    blockhash = rpc("getLatestBlockhash", [{"commitment": "confirmed"}])["value"]["blockhash"]
+    msg = close_accounts_tx(pub, empty, blockhash)
+    tx = shortvec_enc(1) + priv.sign(msg) + msg
+    sig = rpc("sendTransaction", [base64.b64encode(tx).decode(), {"encoding": "base64",
+                                                                   "preflightCommitment": "confirmed"}])
+    return len(empty), sig
+
+
 # --------------------------------------------------------------------------- akceptacja
 
 def confirmed(args, what):

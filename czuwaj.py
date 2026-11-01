@@ -31,6 +31,14 @@ COST_PCT = cfg("FLIP_COST_PCT", 3.0)             # koszty w obie strony: opłaty
 MIN_LIQ = cfg("FLIP_MIN_LIQ", 50_000.0)          # poniżej tej płynności nie wchodzimy
 COOLDOWN_H = cfg("FLIP_COOLDOWN_H", 1.0)         # przerwa po wyjściu, zanim ten sam token wejdzie znowu
 HISTORY_H = 6                                    # ile historii cen trzymamy
+# Automatyczna lista: najbardziej obracane tokeny z Jupitera, z płynnością i bez prawa dodruku czy zamrożenia.
+AUTO = cfg("FLIP_AUTO", 1)                       # 0 wyłącza, wtedy lista jest tylko ręczna
+AUTO_N = cfg("FLIP_AUTO_N", 25)                  # ile tokenów dobieramy
+AUTO_EVERY_H = cfg("FLIP_AUTO_CO_H", 6.0)        # co ile godzin odświeżamy listę
+AUTO_MIN_LIQ = cfg("FLIP_AUTO_MIN_LIQ", 100_000.0)
+AUTO_MIN_AGE_H = cfg("FLIP_AUTO_MIN_WIEK_H", 24.0)   # świeże tokeny to nie flipy, tylko loteria
+AUTO_MAX_MCAP = cfg("FLIP_AUTO_MAX_MCAP", 300_000_000.0)
+AUTO_MIN_ORGANIC = cfg("FLIP_AUTO_MIN_ORGANIC", 30.0)  # niżej: obrót głównie od botów
 # Podpowiedzi wyjścia dla prawdziwych pozycji agenta, te same progi co w handel.py.
 TAKE_PROFIT = cfg("TAKE_PROFIT_PCT", 100.0)
 STOP_LOSS = cfg("STOP_LOSS_PCT", -40.0)
@@ -93,10 +101,67 @@ def held_positions():
             if p["bought"] and p["sold"] < p["bought"] * 0.99}
 
 
+# --------------------------------------------------------------------------- lista automatyczna
+
+def auto_pick():
+    """Tokeny do flipów: obrót organiczny względem kapitalizacji, czyli to, co naprawdę się rusza."""
+    seen = {}
+    for path in ("toptraded/24h", "toptrending/24h", "toporganicscore/24h"):
+        try:
+            for t in jup_get(f"/tokens/v2/{path}?limit=100") or []:
+                seen.setdefault(t["id"], t)
+        except ApiError as e:
+            print(f"  ! Jupiter {path}: {e}", file=sys.stderr)
+    now, picks = time.time(), []
+    for t in seen.values():
+        if t["id"] in agent.SKIP_MINTS or agent.SKIP_TAGS & set(t.get("tags") or []):
+            continue
+        if (t.get("liquidity") or 0) < AUTO_MIN_LIQ or not 0 < (t.get("mcap") or 0) <= AUTO_MAX_MCAP:
+            continue
+        if (t.get("organicScore") or 0) < AUTO_MIN_ORGANIC:
+            continue
+        born = agent.parse_ts((t.get("firstPool") or {}).get("createdAt"))
+        if not born or now - born < AUTO_MIN_AGE_H * 3600:
+            continue
+        flags, _ = risk_flags(t, None)
+        if any("dodrukować" in f or "zamrozić" in f for f in flags):
+            continue
+        s = t.get("stats24h") or {}
+        organic = (s.get("buyOrganicVolume") or 0) + (s.get("sellOrganicVolume") or 0)
+        picks.append((organic / t["mcap"], t))
+    picks.sort(key=lambda x: x[0], reverse=True)
+    return [t for _, t in picks[:AUTO_N]]
+
+
+def refresh_auto(watch, flips):
+    """Podmienia tokeny dobrane automatycznie. Ręcznie dodane i te z otwartym flipem zostają."""
+    picks = auto_pick()
+    if not picks:
+        return [], []   # Jupiter nie odpowiedział: zostawiamy starą listę
+    busy = {f["mint"] for f in flips if not f.get("exit_ts")}
+    new = {t["id"]: t for t in picks}
+    removed = [m for m, v in watch.items() if v.get("auto") and m not in new and m not in busy]
+    for m in removed:
+        watch.pop(m)
+    added = [m for m in new if m not in watch]
+    today = datetime.now(timezone.utc).date().isoformat()
+    for m in added:
+        watch[m] = {"symbol": new[m]["symbol"], "added": today, "auto": True}
+    return added, removed
+
+
 # --------------------------------------------------------------------------- jeden przebieg
 
 def tick(quiet=False):
     watch = load(WATCH, {})
+    alerts = load(ALERTS, {})
+    auto_note = ""
+    if AUTO and time.time() - alerts.get("_auto_ts", 0) >= AUTO_EVERY_H * 3600:
+        added, removed = refresh_auto(watch, load(FLIPS, []))
+        alerts["_auto_ts"] = time.time()
+        save(WATCH, watch)
+        save(ALERTS, alerts)
+        auto_note = f" · lista automatyczna odświeżona: +{len(added)} −{len(removed)}"
     if not watch:
         sys.exit("Lista obserwowanych tokenów jest pusta. Dodaj token: python3 agent.py obserwuj --dodaj MINT")
     held = held_positions()
@@ -104,7 +169,6 @@ def tick(quiet=False):
     quotes = fetch_prices(set(watch) | set(held))
     history = load(PRICES, {})
     flips = load(FLIPS, [])
-    alerts = load(ALERTS, {})
     events = []
     ch24_cache = {}
 
@@ -184,7 +248,7 @@ def tick(quiet=False):
 
     open_n = sum(not f.get("exit_ts") for f in flips)
     stamp = datetime.now().strftime("%H:%M")
-    print(f"{stamp}  {len(quotes)} tokenów · otwarte flipy na sucho: {open_n}" + "".join(f"\n  • {e}" for e in events),
+    print(f"{stamp}  {len(quotes)} tokenów · otwarte flipy na sucho: {open_n}{auto_note}" + "".join(f"\n  • {e}" for e in events),
           flush=True)
 
 
@@ -210,6 +274,14 @@ def cmd_watch(args):
 
 def cmd_list(args):
     watch = load(WATCH, {})
+    if getattr(args, "auto", False):
+        added, removed = refresh_auto(watch, load(FLIPS, []))
+        alerts = load(ALERTS, {})
+        alerts["_auto_ts"] = time.time()
+        save(WATCH, watch)
+        save(ALERTS, alerts)
+        sym = lambda ms: ", ".join(watch.get(m, {}).get("symbol", m[:6]) for m in ms) or "—"
+        print(f"Lista automatyczna odświeżona. Dodane: {sym(added)} · usunięte: {len(removed)}\n")
     if args.dodaj:
         t = token_info([args.dodaj]).get(args.dodaj)
         if not t:
@@ -242,7 +314,8 @@ def cmd_list(args):
         chs = [change(hist, now, price, m) for m in (15, 60, 240)] if price else [None] * 3
         cols = " / ".join(f"{c:+.0f}%" if c is not None else "?" for c in chs)
         low = "  ⚠ płynność poniżej progu" if liq < MIN_LIQ else ""
-        print(f"  {meta['symbol']:<10} płynność {fmt_usd(liq):>6}  {cols}{low}")
+        tag = "  (auto)" if meta.get("auto") else ""
+        print(f"  {meta['symbol']:<10} płynność {fmt_usd(liq):>6}  {cols}{low}{tag}")
     if not history:
         print("\nHistoria cen jeszcze się nie zebrała: uruchom czuwanie (agent.py czuwaj --co 2).")
 

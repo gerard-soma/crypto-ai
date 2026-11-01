@@ -145,7 +145,6 @@ document.addEventListener('click', async (e) => {
 // ------------------------------------------------------------------ snajper
 let snRange = 'day', snData;
 $$('#sn-range button').forEach((b) => b.onclick = () => { snRange = b.dataset.r; $$('#sn-range button').forEach((x) => x.classList.toggle('on', x === b)); renderSniper(); });
-$('#sn-hide-start').onchange = () => renderSniper();
 
 function renderSniper() {
   const d = snData; if (!d) return;
@@ -162,18 +161,18 @@ function renderSniper() {
 
   const st = d[snRange] || {};
   const tile = (name, x) => x ? kpi(name, signed(x.median_pct, 1), `mediana · ${x.n} pozycji · ${signedUsd(x.usd)} · do celu ${x.hit_tp_pct}%`) : kpi(name, '—', 'brak zamkniętych');
-  $('#sn-stats').innerHTML = tile('Start', st.start) + tile('Rozpęd', st['rozpęd']) + tile('Naprawdę', st['naprawdę']);
+  $('#sn-stats').innerHTML = tile('Przepływ', st['przepływ']) + tile('Rozpęd', st['rozpęd']) + tile('Naprawdę', st['naprawdę']);
   const rows = Object.entries(st);
   $('#sn-table').innerHTML = rows.length ? `<table><thead><tr><th>Strategia</th><th class="r">Pozycje</th><th class="r">Na plusie</th><th class="r">Mediana</th><th class="r">Razem</th><th class="r">≥ 80% w dół</th><th class="r">Najlepsza</th></tr></thead><tbody>${
     rows.map(([k, x]) => `<tr><td class="sym">${esc(k)}</td><td class="r">${x.n}</td><td class="r">${x.win_pct}%</td><td class="r">${signed(x.median_pct, 1)}</td><td class="r">${signedUsd(x.usd)}</td><td class="r">${x.dead_pct}%</td><td class="r">${signed(x.best_pct)}</td></tr>`).join('')}</tbody></table>
     <p class="dim">Wnioski dopiero przy kilkuset pozycjach. Pojedyncze +500% to nie przewaga.</p>` : empty('Jeszcze brak zamkniętych pozycji.');
   const open = d.open || [];
   $('#sn-open-n').textContent = open.length ? `${open.length}` : '';
-  const shown = open.filter((p) => p.live || p.strategy !== 'start' || !$('#sn-hide-start').checked);
+  const shown = open;
   $('#sn-open').innerHTML = shown.length ? `<table><thead><tr><th>Token</th><th>Strategia</th><th class="r">Szczyt</th><th class="r">Od</th></tr></thead><tbody>${
     shown.map((p) => `<tr><td class="sym">${esc(p.symbol)} ${p.live ? '<span class="tag grad">naprawdę</span>' : ''}</td><td><span class="tag blue">${esc(p.strategy)}</span></td><td class="r">${signed((p.peak / p.entry - 1) * 100)}</td><td class="r">${ago(p.entry_ts)}</td></tr>`).join('')}</tbody></table>`
-    : empty(open.length ? `Otwarte są tylko pozycje „start” (${open.length}).` : 'Brak otwartych pozycji.');
-  const recent = (d.recent || []).filter((r) => r.live || r.strategy !== 'start' || !$('#sn-hide-start').checked).slice(0, 14);
+    : empty('Brak otwartych pozycji.');
+  const recent = (d.recent || []).slice(0, 14);
   $('#sn-recent').innerHTML = recent.length ? `<table><thead><tr><th>Token</th><th>Strategia</th><th>Wyjście</th><th class="r">Wynik</th><th class="r">Szczyt</th><th class="r">Czas</th></tr></thead><tbody>${
     recent.map((r) => `<tr><td class="sym">${esc(r.symbol)} ${r.live ? '<span class="tag grad">naprawdę</span>' : ''}</td><td><span class="tag blue">${esc(r.strategy)}</span></td><td class="dim">${esc((r.exits || []).map((x) => x.reason).join(' → '))}</td><td class="r">${signed(r.net_pct)}</td><td class="r">${signed(r.max_pct)}</td><td class="r">${r.hold_s} s</td></tr>`).join('')}</tbody></table>` : empty('Jeszcze nic się nie zamknęło.');
 }

@@ -42,27 +42,37 @@ Każdy raport dopisuje swoje sygnały do `dane/dziennik.json` razem z ceną z ch
 ```
 python3 agent.py obserwuj --dodaj MINT  # dodaj token do czuwania (bez prawa dodruku i zamrożenia)
 python3 agent.py obserwuj               # lista ze zmianą ceny w 15 min / 1 h / 4 h
+python3 agent.py obserwuj --auto        # odśwież teraz listę dobieraną automatycznie
 python3 agent.py czuwaj --co 2          # we własnym Terminalu: sprawdza ceny co 2 min, Ctrl+C kończy
 python3 agent.py flipy                  # wyniki flipów na sucho
 ```
 
 Czuwanie bierze ceny z darmowego API Jupitera (0 kredytów Helius). Testuje dwie strategie bez pieniędzy: **dołek** (spadek ≥ 15% w 1 h, ale nie więcej niż 35% w 4 h ani 25% w 24 h) i **wybicie** (wzrost ≥ 10% w 15 min). Wchodzi tylko przy płynności od $50k. Symulowany flip kończy się przy +20%, −12% albo po 4 h, a od wyniku odejmuje 3% kosztów (opłaty, poślizg, wpływ na cenę). Wejścia i wyjścia trafiają do `dane/flipy.json` i do powiadomień na Macu. Czuwanie pilnuje też prawdziwych pozycji agenta i daje znać przy celu albo stopie (najwyżej raz na 6 h). Niczego nie kupuje. Progi zmienisz w `.env` (`FLIP_*`). Reguły wejścia potrzebują historii cen, więc pierwsze sygnały pojawią się po ok. 15 min (wybicie) i 1 h (dołek) czuwania.
 
+Oprócz tokenów dodanych ręcznie czuwanie co 6 h samo dobiera do 25 tokenów z list Jupitera (najczęściej handlowane, popularne i z najwyższym wynikiem organicznym). Warunki: płynność od $100k, wiek od 24 h, kapitalizacja do $300 mln, wynik organiczny od 30, bez prawa dodruku i zamrożenia. Kolejność wyznacza obrót organiczny względem kapitalizacji. Token z otwartym flipem nie wypada z listy, a ręcznie dodane zostają zawsze. Więcej tokenów to więcej flipów, a dopiero przy ok. 20–30 zamkniętych da się ocenić strategię. Ustawienia `FLIP_AUTO_*` są w `.env.example`.
+
 ### Snajper nowych tokenów (pump.fun)
 
 ```
 python3 agent.py snajper                 # na sucho: łapie nowe tokeny, niczego nie kupuje
 python3 agent.py snajper-wyniki          # wyniki; --godziny 24 tylko ostatnia doba
+python3 agent.py snajper-test            # sprawdza setki wariantów progów na nagraniach; --dni 3
 python3 agent.py nowy-portfel --snajper  # osobny portfel do prawdziwego handlu
 python3 agent.py snajper --naprawde      # we własnym Terminalu: handluje sam, w limitach z .env
 touch dane/snajper.STOP                  # wstrzymuje nowe zakupy (rm, żeby wznowić)
 ```
 
-Nowe tokeny przychodzą na żywo z darmowego strumienia PumpPortal, a ceny co 3 s z Jupitera (0 kredytów Helius). Strategie: **start** kupuje pierwszą cenę każdego tokenu (punkt odniesienia), **rozpęd** kupuje, gdy w 3 min od startu cena wzrośnie o 50%. Tokeny, na które twórca wydał na starcie ponad 5 SOL, są pomijane. Wyjście: połowa przy +100%, stop −30%, po realizacji połowy ruchomy stop 30% od szczytu, najwyżej 10 min. Na sucho wejście i wyjście liczymy po cenie z następnego odczytu po sygnale, czyli ok. 3 s później, jak w prawdziwej transakcji. Koszty: 1,5% prowizji w każdą stronę, opłata sieci i 0,0015 SOL kaucji za konto tokenu. Kaucja wraca dopiero po zamknięciu konta, a przy stawce $1 to ok. 14%.
+Nowe tokeny przychodzą na żywo z darmowego strumienia PumpPortal. Co 3 s Jupiter (0 kredytów Helius) podaje dla każdego cenę i dane o przepływie: liczbę traderów i posiadaczy, liczbę i wolumen kupna i sprzedaży, udział największych posiadaczy i twórcy oraz liczbę tokenów, które twórca wypuścił wcześniej. Strategie:
+- **przepływ** wchodzi w 10–60 s od startu, gdy token ma co najmniej 15 traderów, kupna jest co najmniej 1,5 raza więcej niż sprzedaży, kupiono netto za co najmniej $500, a twórca wypuścił najwyżej 20 tokenów (seryjni twórcy zwykle zrzucają),
+- **rozpęd** to stara reguła (cena +50% w 3 min od startu), zostaje do porównania.
 
-Z `--naprawde` bot handluje sam z portfela snajpera (`~/.config/wieloryby/snajper.json`), bez pytania o każdą transakcję. Naprawdę handluje tylko jedna strategia (`SNAJPER_STRATEGIA`, domyślnie rozpęd), reszta dalej na sucho. Twarde limity: stawka `SNAJPER_USD` (domyślnie $1, w kodzie najwyżej $5), najwyżej 2 otwarte pozycje, 10 zakupów i $3 straty na dobę (otwarte pozycje liczą się jak stracone). Start wymaga wpisania TAK we własnym oknie Terminala. Po Ctrl+C otwarte pozycje zostają w `dane/snajper-otwarte.json`, a następne uruchomienie je domyka.
+Tokeny, na które twórca wydał na starcie ponad 5 SOL, są pomijane. Wyjście: połowa przy +100%, stop −30%, po realizacji połowy ruchomy stop 30% od szczytu, najwyżej 10 min. Na sucho wejście i wyjście liczymy po cenie z następnego odczytu po sygnale, czyli ok. 3 s później, jak w prawdziwej transakcji. Koszty: 1,5% prowizji w każdą stronę i opłaty sieci. Po wyjściu snajper zamyka puste konto tokenu, więc kaucja (~0,0015 SOL, przy stawce $1 to ok. 14%) wraca na portfel. Stara wersja tej kaucji nie odzyskiwała i to była większa część jej strat. Jej wyniki są w `dane/snajper-wyniki-v1.jsonl`.
 
-Boty, które kupują w tym samym bloku co start tokenu, zawsze będą szybsze. Snajper łapie dopiero to, co dzieje się po kilku sekundach. Najpierw zbierz kilkaset pozycji na sucho i zobacz medianę.
+**Nagrania i test reguł.** Snajper zapisuje odczyty każdego nowego tokenu do `dane/snajper-nagrania/` (plik dziennie, kilka MB). `snajper-test` odtwarza je tym samym kodem i sprawdza kilkaset wariantów progów wejścia, a dla najlepszych 54 warianty wyjścia. Warianty wybiera na starszych 60% tokenów, a pokazuje, jak wypadły na nowszych 40%. Liczy się tylko ten drugi wynik: najlepszy z setek wariantów prawie zawsze wygląda dobrze na danych, na których go wybrano. Pierwszy sensowny test będzie możliwy po ok. dobie nagrań.
+
+Z `--naprawde` bot handluje sam z portfela snajpera (`~/.config/wieloryby/snajper.json`), bez pytania o każdą transakcję. Naprawdę handluje tylko jedna strategia (`SNAJPER_STRATEGIA`, domyślnie przepływ), reszta dalej na sucho. Twarde limity: stawka `SNAJPER_USD` (domyślnie $1, w kodzie najwyżej $5), najwyżej 2 otwarte pozycje, 10 zakupów i $3 straty na dobę (otwarte pozycje liczą się jak stracone). Start wymaga wpisania TAK we własnym oknie Terminala. Po Ctrl+C otwarte pozycje zostają w `dane/snajper-otwarte.json`, a następne uruchomienie je domyka.
+
+Boty, które kupują w tym samym bloku co start tokenu, zawsze będą szybsze, a odczyt co 3 s sprawia, że stop potrafi wykonać się dużo niżej niż −30%. Szybsze dane na żywo są płatne: transakcje tokenów w PumpPortal kosztują 0,01 SOL za 10 tys. zdarzeń, a strumień Heliusa przekroczyłby darmowy limit w kilka dni. Publiczny węzeł Solany nie nadąża za ruchem pump.fun. Dlatego ta wersja szuka przewagi w wyborze tokenów, a nie w szybkości.
 
 ## Panel w przeglądarce
 

@@ -22,6 +22,7 @@ ALLOWED_BASH = [
     rf"{AGENT} flipy( --json)?",
     rf"{AGENT} obserwuj",
     rf"{AGENT} snajper-wyniki( --godziny \d+(\.\d+)?)?( --json)?",
+    rf"{AGENT} snajper-test( --dni \d+)?",
     rf"{AGENT} raport( --godziny \d+(\.\d+)?)?( --ile \d+)?( --json)?",
     rf"{AGENT} portfel [1-9A-HJ-NP-Za-km-z]{{32,44}}( --godziny \d+(\.\d+)?)?",
 ]
@@ -54,7 +55,7 @@ def main():
         cmd = " ".join(str(inp.get("command", "")).split())
         if not any(re.fullmatch(rx, cmd) for rx in ALLOWED_BASH):
             deny("w panelu wolno uruchamiać tylko polecenia agenta do odczytu "
-                 "(diagnoza, pozycje, wyniki, flipy, obserwuj, snajper-wyniki, raport, portfel).")
+                 "(diagnoza, pozycje, wyniki, flipy, obserwuj, snajper-wyniki, snajper-test, raport, portfel).")
     elif tool in ("Read", "Grep", "Glob"):
         check_path(inp.get("file_path") or inp.get("path") or "")
         if ".env" in str(inp.get("glob", "")) or ".env" in str(inp.get("pattern", "")) and tool == "Glob":

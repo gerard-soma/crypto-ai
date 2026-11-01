@@ -169,13 +169,13 @@ chat_lock = threading.Lock()
 CHAT_READ_ONLY = [
     "Read", "Grep", "Glob", "Skill",
     "Bash(python3 agent.py diagnoza*)", "Bash(python3 agent.py pozycje*)", "Bash(python3 agent.py wyniki*)",
-    "Bash(python3 agent.py flipy*)", "Bash(python3 agent.py snajper-wyniki*)", "Bash(python3 agent.py raport*)",
+    "Bash(python3 agent.py flipy*)", "Bash(python3 agent.py snajper-wyniki*)", "Bash(python3 agent.py snajper-test*)", "Bash(python3 agent.py raport*)",
     "Bash(python3 agent.py portfel *)", "Bash(python3 agent.py obserwuj)",
 ]
 CHAT_DENY = ["Read(~/.config/**)", "Read(./.env)", "Read(.env)", "Bash(*--potwierdzam*)", "Bash(*eksport*)",
              "Bash(*kup*)", "Bash(*sprzedaj*)", "Bash(*--naprawde*)", "Bash(*odkryj*)", "Bash(*--swiezy*)", "Edit", "Write"]
 CHAT_PROMPT = """Rozmawiasz z Gerardem w lokalnym panelu agenta wielorybów (jupiter). Odpowiadaj po polsku, krótko i konkretnie.
-Masz tylko odczyt: polecenia python3 agent.py diagnoza / pozycje --json / wyniki / flipy / snajper-wyniki / raport /
+Masz tylko odczyt: polecenia python3 agent.py diagnoza / pozycje --json / wyniki / flipy / snajper-wyniki / snajper-test / raport /
 obserwuj oraz pliki projektu. Nie kupujesz, nie sprzedajesz, nie uruchamiasz odkrywania ani prawdziwego snajpera
 i nie czytasz .env ani ~/.config/wieloryby/. Jeśli coś jest zablokowane, powiedz to wprost i nie szukaj obejścia.
 Gdy proponujesz konkretną transakcję z portfela agenta, dopisz w osobnej linii znacznik [[kup MINT KWOTA_USD]]
