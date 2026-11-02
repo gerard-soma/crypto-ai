@@ -15,7 +15,8 @@ Pracujesz w `/Users/gerardloba/Desktop/jupiter`. Dane zbiera `agent.py`. Ty inte
 - Nigdy nie czytaj `~/.config/wieloryby/`, nie uruchamiaj `eksport` i nie proś o klucz prywatny ani frazę odzyskiwania.
 - Jeśli skrypt odmówi (limit, poślizg, wpływ na cenę, dodruk/zamrożenie), zaakceptuj to i powiedz dlaczego. Nie szukaj obejścia.
 - Sprzedaż: `python3 agent.py sprzedaj MINT --procent 50`, ta sama dwustopniowa ścieżka.
-- `python3 agent.py pozycje --json` pokazuje saldo i podpowiedzi wyjścia (cel, stop loss, wieloryby wychodzą). Sprawdzaj je na początku każdej sesji z `/wieloryby`.
+- Gdy zakup idzie za konkretnym portfelem, dodaj do polecenia `--za ADRES`. Podpowiedź wyjścia będzie wtedy pilnować jego salda.
+- `python3 agent.py pozycje --json` pokazuje saldo i podpowiedzi wyjścia (cel, stop loss, wieloryby wychodzą, portfel z `--za` zszedł z salda). Sprawdzaj je na początku każdej sesji z `/wieloryby`.
 
 ## Szybka diagnoza (0 kredytów Helius)
 
@@ -23,7 +24,7 @@ Gdy Gerard pyta „jak sytuacja”, „szybka diagnoza” albo „co z portfelem
 
 ## Czuwanie i flipy (na razie tylko na sucho)
 
-`czuwaj.py` co kilka minut sprawdza ceny tokenów z `dane/czuwanie.json` (0 kredytów Helius) i testuje dwie strategie bez pieniędzy: **dołek** (spadek ≥ 15% w 1 h, ale nie więcej niż 35% w 4 h ani 25% w 24 h) i **wybicie** (wzrost ≥ 10% w 15 min). Wyjście symulowanego flipa: +20% cel, −12% stop albo po 4 h. Od wyniku odejmuje 3% kosztów. Pilnuje też prawdziwych pozycji agenta i wysyła powiadomienie przy celu albo stopie. Gerard uruchamia je we własnym Terminalu: `python3 agent.py czuwaj --co 2`.
+`czuwaj.py` co kilka minut sprawdza ceny tokenów z `dane/czuwanie.json` (0 kredytów Helius) i testuje dwie strategie bez pieniędzy: **dołek** (spadek ≥ 15% w 1 h, ale nie więcej niż 35% w 4 h ani 25% w 24 h) i **wybicie** (wzrost ≥ 10% w 15 min). Wyjście symulowanego flipa: +20% cel, −12% stop albo po 4 h. Od wyniku odejmuje 3% kosztów. Pilnuje też prawdziwych pozycji agenta i wysyła powiadomienie przy celu, stopie albo gdy portfel z `--za` zejdzie z salda. Gerard uruchamia je we własnym Terminalu: `python3 agent.py czuwaj --co 2`.
 
 - `python3 agent.py flipy` pokazuje wyniki na sucho: liczbę flipów, odsetek na plusie, medianę i sumę po kosztach, osobno dla każdej strategii.
 - `python3 agent.py obserwuj` wypisuje listę tokenów ze zmianą w 15 min, 1 h i 4 h. `--dodaj MINT` dodaje token (tokeny z prawem dodruku albo zamrożenia odrzuca), `--usun SYMBOL` go usuwa.

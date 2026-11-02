@@ -105,7 +105,7 @@ async function loadOverview() {
   ].join('');
   $('#agent-addr').textContent = short(a.wallet);
   const posTable = (rows, click) => rows.length ? `<table><thead><tr><th>Token</th><th class="r">Wartość</th><th class="r">Wynik</th><th>Podpowiedź</th></tr></thead><tbody>${
-    rows.map((x) => `<tr${click ? ` class="click" data-sell="${esc(x.mint)}"` : ''}><td class="sym">${esc(x.symbol)}</td><td class="r">${usd(x.value_usd)}</td><td class="r">${signed(x.pnl_pct)}</td><td>${x.hint ? `<span class="tag rose">${esc(x.hint)}</span>` : '<span class="dim">trzymaj</span>'}</td></tr>`).join('')}</tbody></table>` : empty('Brak pozycji.');
+    rows.map((x) => `<tr${click ? ` class="click" data-sell="${esc(x.mint)}"` : ''}><td class="sym">${esc(x.symbol)}</td><td class="r">${usd(x.value_usd)}</td><td class="r">${signed(x.pnl_pct)}</td><td>${x.hint ? `<span class="tag rose">${esc(x.hint)}</span>` : '<span class="dim">brak sygnału</span>'}</td></tr>`).join('')}</tbody></table>` : empty('Brak pozycji.');
   $('#agent-pos').innerHTML = posTable(a.positions || []);
   $('#trade-pos').innerHTML = posTable(a.positions || [], true);
   const priv = (p.positions || []).filter((x) => !x.dust);
@@ -225,7 +225,11 @@ function resetConfirm() { pending = null; $('#confirm').hidden = true; }
 function tradeBody(confirm) {
   const f = $('#trade');
   const body = { side, mint: f.mint.value.trim() };
-  if (side === 'kup') body.usd = parseFloat(f.usd.value); else body.procent = parseFloat(f.procent.value);
+  if (side === 'kup') {
+    body.usd = parseFloat(f.usd.value);
+    const za = f.za.value.trim();
+    if (za) body.za = za;
+  } else body.procent = parseFloat(f.procent.value);
   if (confirm) body.confirm = true;
   return body;
 }

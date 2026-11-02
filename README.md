@@ -107,6 +107,8 @@ python3 agent.py kup MINT --usd 5 --potwierdzam # wykonanie
 python3 agent.py sprzedaj MINT --procent 50
 python3 agent.py pozycje                         # saldo, zysk/strata i podpowiedź, kiedy wyjść
 ```
+Zakup za konkretnym portfelem oznacz przez `kup MINT --usd 5 --za ADRES` (w panelu pole „Za portfelem”). Podpowiedź pokaże wtedy wyjście, gdy saldo tego portfela spadnie o co najmniej 10% od szczytu. Przypisania są w `dane/zrodla.json`, a salda idą przez Jupitera, bez kredytów Helius. Spadek salda może też oznaczać przelew na inny portfel, nie tylko sprzedaż. Czuwanie wysyła o tym powiadomienie, nie częściej niż co 6 h. „Brak sygnału” w panelu znaczy tylko, że żaden warunek wyjścia się nie włączył, i nie jest zaleceniem trzymania.
+
 We własnym Terminalu podgląd sam zapyta o „TAK”. W Claude Code każde polecenie `kup`/`sprzedaj` wymaga Twojej zgody w okienku uprawnień (`.claude/settings.json`). Claude nie może też czytać pliku z kluczem ani uruchomić `eksport`.
 
 Twarde limity w kodzie (zmienisz je w `.env`):

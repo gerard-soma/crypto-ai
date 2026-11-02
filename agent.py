@@ -766,6 +766,69 @@ def cmd_results(args):
 
 # --------------------------------------------------------------------------- portfel
 
+def holdings(address):
+    h = jup_get(f"/ultra/v1/holdings/{address}")
+    sol = int(h.get("amount") or 0) / 1e9
+    tokens = {}
+    for mint, accts in (h.get("tokens") or {}).items():
+        amt = sum(int(a["amount"]) for a in accts)
+        if amt and mint != SOL:
+            tokens[mint] = {"raw": amt, "decimals": accts[0]["decimals"], "ui": amt / 10 ** accts[0]["decimals"]}
+    return sol, tokens
+
+
+# --------------------------------------------------------------------------- portfele, za którymi kupiono tokeny
+
+SOURCES = DATA / "zrodla.json"  # token → portfel, za którym go kupiono
+SOURCE_DROP = 0.10  # spadek salda tego portfela od szczytu, od którego podpowiadamy wyjście
+
+
+def load_sources():
+    return json.loads(SOURCES.read_text()) if SOURCES.exists() else {}
+
+
+def write_sources(sources):
+    # Atomowo: czuwanie i panel czytają ten plik równolegle.
+    tmp = SOURCES.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(sources, indent=1))
+    os.replace(tmp, SOURCES)
+
+
+def save_source(mint, wallet):
+    """Zapamiętuje portfel, za którym kupiono token. Punkt odniesienia to jego saldo w chwili zakupu."""
+    try:
+        balance = holdings(wallet)[1].get(mint, {}).get("ui", 0)
+    except ApiError:
+        balance = 0  # szczyt ustawi się przy pierwszym udanym odczycie
+    sources = load_sources()
+    sources[mint] = {"wallet": wallet, "peak": balance, "balance": balance, "since": int(time.time())}
+    write_sources(sources)
+
+
+def source_hints(mints):
+    """Czy portfele, za którymi kupiono tokeny, nadal je trzymają. Salda z Jupitera, 0 kredytów Helius."""
+    sources = load_sources()
+    hints, balances = {}, {}
+    for mint in mints:
+        s = sources.get(mint)
+        if not s:
+            continue
+        try:
+            if s["wallet"] not in balances:
+                balances[s["wallet"]] = holdings(s["wallet"])[1]
+            s["balance"] = balances[s["wallet"]].get(mint, {}).get("ui", 0)
+            s["peak"] = max(s["peak"], s["balance"])
+        except ApiError:
+            pass  # chwilowy błąd: zostaje ostatnie znane saldo
+        if s["peak"] and s["balance"] < s["peak"] * (1 - SOURCE_DROP):
+            who = short(s["wallet"])
+            hints[mint] = (f"{who} nie ma już tego tokenu → rozważ sprzedaż" if not s["balance"] else
+                           f"{who} zmniejszył saldo o {(1 - s['balance'] / s['peak']) * 100:.0f}% → rozważ sprzedaż")
+    if sources:
+        write_sources(sources)
+    return hints
+
+
 def cmd_wallet(args):
     sol_usd = sol_price()
     txs = helius_txs(args.adres, pages=2, gte=time.time() - args.godziny * 3600)
@@ -806,6 +869,7 @@ def main():
     bp = sub.add_parser("kup", help="kup token za SOL (podgląd, potem akceptacja)")
     bp.add_argument("mint")
     bp.add_argument("--usd", type=float, required=True, help="kwota w USD")
+    bp.add_argument("--za", metavar="ADRES", help="portfel, za którym kupujesz: podpowie wyjście, gdy zejdzie z salda")
     bp.add_argument("--potwierdzam", action="store_true", help="wykonaj bez pytania (po Twojej zgodzie)")
     sp = sub.add_parser("sprzedaj", help="sprzedaj token za SOL (podgląd, potem akceptacja)")
     sp.add_argument("mint")

@@ -19,7 +19,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 import agent
-from agent import SOL, cfg, fmt_usd, jup_get, http_json, risk_flags, short, sol_price, token_info
+from agent import (SOL, cfg, fmt_usd, holdings, jup_get, http_json, risk_flags, save_source, short, sol_price,
+                   source_hints, token_info)
 
 KEY_DIR = Path.home() / ".config" / "wieloryby"
 KEY_FILE = KEY_DIR / "portfel.json"
@@ -96,17 +97,6 @@ def cmd_export(args):
     if input("Klucz prywatny pozwala zabrać wszystkie środki. Pokazać? Wpisz TAK: ").strip().upper() != "TAK":
         return
     print(f"\nAdres: {b58encode(pub)}\nKlucz prywatny (import do Phantoma / Solflare):\n{b58encode(bytes(json.loads(path.read_text())))}\n")
-
-
-def holdings(address):
-    h = jup_get(f"/ultra/v1/holdings/{address}")
-    sol = int(h.get("amount") or 0) / 1e9
-    tokens = {}
-    for mint, accts in (h.get("tokens") or {}).items():
-        amt = sum(int(a["amount"]) for a in accts)
-        if amt and mint != SOL:
-            tokens[mint] = {"raw": amt, "decimals": accts[0]["decimals"], "ui": amt / 10 ** accts[0]["decimals"]}
-    return sol, tokens
 
 
 # --------------------------------------------------------------------------- dziennik
@@ -311,10 +301,13 @@ def cmd_buy(args):
         ("Kapitalizacja / płynn.", f"{fmt_usd(t.get('mcap'))} / {fmt_usd(t.get('liquidity'))}"),
         ("Ostrzeżenia", "; ".join(flags) or "brak"),
         ("Limit dzienny", f"{spent + args.usd:.2f} / {MAX_DAILY_USD:g} USD po tej transakcji"),
+        *([("Za portfelem", short(args.za))] if args.za else []),
     ])
     if not confirmed(args, f"Kupić {t['symbol']} za ~{fmt_usd(args.usd)}?"):
         return
     run_swap(SOL, args.mint, lamports, order, priv, pub, "buy", t, sol_usd)
+    if args.za:
+        save_source(args.mint, args.za)
 
 
 def cmd_sell(args):
@@ -389,6 +382,7 @@ def agent_positions():
     log = load_log()
     latest = agent.latest_report()
     exits = {e["mint"] for e in latest[1].get("exits", [])} if latest else set()
+    source_exits = source_hints(tokens)
 
     total = sol * sol_usd
     rows = []
@@ -404,6 +398,8 @@ def agent_positions():
         hint = ""
         if mint in exits:
             hint = "wieloryby wychodzą → rozważ sprzedaż"
+        elif mint in source_exits:
+            hint = source_exits[mint]
         elif pnl is not None and pnl >= TAKE_PROFIT:
             hint = "cel osiągnięty → rozważ sprzedaż połowy (--procent 50)"
         elif pnl is not None and pnl <= STOP_LOSS:

@@ -239,6 +239,13 @@ def tick(quiet=False):
             what = "sprzedaż połowy" if kind == "cel" else "sprzedaż całości"
             event(f"Pozycja agenta: {symbol} {pnl:+.0f}%", f"{kind} → rozważ {what}, otwórz /wieloryby")
 
+    # Portfel, za którym kupiono token, zszedł z salda: ten sam rytm powiadomień co cel i stop.
+    for mint, hint in agent.source_hints(held).items():
+        key = f"{mint}:zrodlo"
+        if now - alerts.get(key, 0) >= ALERT_REPEAT_H * 3600:
+            alerts[key] = now
+            event(f"Pozycja agenta: {held[mint][0]}", f"{hint}, otwórz /wieloryby")
+
     for mint, (price, _) in quotes.items():
         history[mint] = [s for s in history.get(mint, []) if now - s[0] <= HISTORY_H * 3600] + [[now, price]]
     history = {m: h for m, h in history.items() if m in watch or m in held}

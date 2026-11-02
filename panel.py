@@ -443,6 +443,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not 0 < usd <= 50:
                     raise ValueError("Kwota musi być dodatnia.")
                 args += ["--usd", f"{usd:g}"]
+                if b.get("za"):
+                    if not valid_mint(b["za"]):
+                        raise ValueError("Niepoprawny adres portfela.")
+                    args += ["--za", b["za"]]
             else:
                 pct = float(b.get("procent") or 100)
                 if not 0 < pct <= 100:
