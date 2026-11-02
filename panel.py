@@ -40,6 +40,10 @@ SERVICES = {
 procs = {}
 jobs = {}   # długie polecenia (raport, odkryj): {id: {cmd, started, done, out}}
 _cache = {}
+_locks, _locks_guard = {}, threading.Lock()
+STAN_FILE = DATA / "panel-stan.json"     # ostatni dobry odczyt każdej części stanu
+ERROR_LOG = DATA / "panel-bledy.log"
+STAN_SECTIONS = {"agent": ("agent",), "private": ("private",), "dziennik": ("journal_entries", "journal_stats")}
 
 
 # --------------------------------------------------------------------------- pomocnicze
@@ -61,12 +65,56 @@ def run_json(args, timeout=180):
 
 
 def cached(key, seconds, fn):
-    hit = _cache.get(key)
-    if hit and time.time() - hit[0] < seconds:
-        return hit[1]
-    value = fn()
-    _cache[key] = (time.time(), value)
-    return value
+    with _locks_guard:
+        lock = _locks.setdefault(key, threading.Lock())
+    with lock:  # kilka kart naraz nie uruchamia tego samego polecenia równolegle
+        hit = _cache.get(key)
+        if hit and time.time() - hit[0] < seconds:
+            return hit[1]
+        value = fn()
+        _cache[key] = (time.time(), value)
+        return value
+
+
+def log_error(where, text):
+    """Dopisuje błąd do dane/panel-bledy.log, a duży log zastępuje kopią .1."""
+    try:
+        if ERROR_LOG.exists() and ERROR_LOG.stat().st_size > 512_000:
+            ERROR_LOG.replace(ERROR_LOG.with_suffix(".log.1"))
+        line = " ".join(str(text).split())[:600]
+        with ERROR_LOG.open("a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {where}: {line}\n")
+    except OSError:
+        pass
+
+
+def stan_view():
+    """Stan portfeli. Część, której nie udało się odczytać, bierzemy z ostatniego dobrego odczytu i oznaczamy jako starą."""
+    last = read_json(STAN_FILE, {})
+    try:
+        fresh = run_json(["diagnoza", "--json"], 90)
+    except (RuntimeError, ValueError, subprocess.TimeoutExpired) as e:
+        fresh = None
+        log_error("stan", e)
+    errors = fresh.pop("errors", {}) if fresh else {name: "brak odpowiedzi" for name in STAN_SECTIONS}
+    out, stale, now = dict(fresh or {}), {}, time.time()
+    for name, keys in STAN_SECTIONS.items():
+        if name not in errors:
+            last[name] = {"ts": now, "data": {k: fresh[k] for k in keys}}
+            continue
+        if fresh:
+            log_error(f"stan/{name}", errors[name])
+        saved = last.get(name)
+        stale[name] = {"age_s": round(now - saved["ts"]) if saved else None}
+        if saved:
+            out.update(saved["data"])
+    if len(stale) == len(STAN_SECTIONS) and not any(last.get(n) for n in STAN_SECTIONS):
+        raise RuntimeError("Nie udało się odczytać portfeli, a nie ma jeszcze wcześniejszego odczytu.")
+    tmp = STAN_FILE.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(last, ensure_ascii=False))
+    os.replace(tmp, STAN_FILE)
+    out["stale"] = stale
+    return out
 
 
 def valid_mint(m):
@@ -377,9 +425,11 @@ class Handler(BaseHTTPRequestHandler):
     def api(self, method, route, query, body):
         try:
             out = self.route(method, route, query, body)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
+            log_error(route, e)
             return self.send(504, {"error": "Polecenie trwało za długo."})
         except Exception as e:  # pokazujemy błąd w panelu zamiast zrywać połączenie
+            log_error(route, e)
             return self.send(500, {"error": str(e)[:600]})
         if out is None:
             return self.send(404, {"error": "nie ma takiej ścieżki"})
@@ -388,7 +438,7 @@ class Handler(BaseHTTPRequestHandler):
     def route(self, method, route, q, b):
         if method == "GET":
             if route == "stan":
-                return cached("stan", 30, lambda: run_json(["diagnoza", "--json"]))
+                return cached("stan", 30, stan_view)
             if route == "uslugi":
                 return {n: service_state(n) for n in SERVICES}
             if route == "flipy":

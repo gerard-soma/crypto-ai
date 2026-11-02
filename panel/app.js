@@ -93,19 +93,39 @@ async function loadServices() { try { services = await api('uslugi'); renderServ
 // ------------------------------------------------------------------ przegląd
 function kpi(k, v, s) { return `<div class="glass kpi"><div class="k">${esc(k)}</div><div class="v">${v}</div><div class="s">${s || ''}</div></div>`; }
 
+const dataAge = (s) => s < 90 ? 'sprzed chwili' : s < 5400 ? `sprzed ${Math.round(s / 60)} min` : `sprzed ${Math.round(s / 3600)} h`;
+let stanOkAt = 0;
+
+function stanNote(text) {
+  const n = $('#stan-note');
+  n.textContent = text || '';
+  n.hidden = !text;
+}
+
 async function loadOverview() {
-  const d = await api('stan');
+  let d;
+  try { d = await api('stan'); }
+  catch (e) {
+    stanNote(stanOkAt ? `Brak nowego odczytu, widzisz dane ${dataAge((Date.now() - stanOkAt) / 1000)}. ${e.message}` : `Brak odczytu portfeli. ${e.message}`);
+    return;
+  }
+  stanOkAt = Date.now();
+  const stale = d.stale || {};
+  const labels = { agent: 'Portfel agenta', private: 'Portfel prywatny', dziennik: 'Dziennik sygnałów' };
+  stanNote(Object.entries(stale).map(([k, v]) => `${labels[k]}: ${v.age_s == null ? 'brak odczytu' : `dane ${dataAge(v.age_s)}`}`).join(' · ')
+    + (Object.keys(stale).length ? '. Jupiter teraz nie odpowiada, panel spróbuje ponownie.' : ''));
   const a = d.agent || {}, p = d.private || {};
+  const solText = (x) => x.sol == null ? 'brak odczytu' : `SOL ${Number(x.sol).toFixed(4)}`;
   const pnl = (a.positions || []).reduce((s, x) => s + (x.value_usd - x.value_usd / (1 + x.pnl_pct / 100)), 0);
   $('#kpis').innerHTML = [
-    kpi('Agent', usd(a.total_usd), `SOL ${Number(a.sol || 0).toFixed(4)} · pozycje ${signedUsd(pnl)}`),
-    kpi('Prywatny', usd(p.total_usd), `SOL ${Number(p.sol || 0).toFixed(4)}`),
+    kpi('Agent', usd(a.total_usd), a.sol == null ? solText(a) : `${solText(a)} · pozycje ${signedUsd(pnl)}`),
+    kpi('Prywatny', usd(p.total_usd), solText(p)),
     kpi('Dziennik sygnałów', d.journal_entries ?? '—', d.journal_stats?.p72 ? `po 72 h mediana ${signed(d.journal_stats.p72.median_pct)}` : ''),
     kpi('Helius w tym miesiącu', (d.helius_month ?? 0).toLocaleString('pl-PL'), `z ${(d.helius_budget ?? 0).toLocaleString('pl-PL')} kredytów · raport ${d.report_age_h != null ? d.report_age_h.toFixed(0) + ' h temu' : 'brak'}`),
   ].join('');
   $('#agent-addr').textContent = short(a.wallet);
   const posTable = (rows, click) => rows.length ? `<table><thead><tr><th>Token</th><th class="r">Wartość</th><th class="r">Wynik</th><th>Podpowiedź</th></tr></thead><tbody>${
-    rows.map((x) => `<tr${click ? ` class="click" data-sell="${esc(x.mint)}"` : ''}><td class="sym">${esc(x.symbol)}</td><td class="r">${usd(x.value_usd)}</td><td class="r">${signed(x.pnl_pct)}</td><td>${x.hint ? `<span class="tag rose">${esc(x.hint)}</span>` : '<span class="dim">brak sygnału</span>'}</td></tr>`).join('')}</tbody></table>` : empty('Brak pozycji.');
+    rows.map((x) => `<tr${click ? ` class="click" data-sell="${esc(x.mint)}"` : ''}><td class="sym">${esc(x.symbol)}</td><td class="r">${usd(x.value_usd)}</td><td class="r">${signed(x.pnl_pct)}</td><td>${x.hint ? `<span class="tag rose">${esc(x.hint)}</span>` : '<span class="dim">brak sygnału</span>'}</td></tr>`).join('')}</tbody></table>` : empty(d.agent ? 'Brak pozycji.' : 'Brak odczytu portfela.');
   $('#agent-pos').innerHTML = posTable(a.positions || []);
   $('#trade-pos').innerHTML = posTable(a.positions || [], true);
   const priv = (p.positions || []).filter((x) => !x.dust);

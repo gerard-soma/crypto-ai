@@ -456,22 +456,40 @@ def private_wallet(sol_usd):
 
 
 def cmd_diagnosis(args):
-    """Szybki stan bez kredytów Helius: oba portfele, wiek raportu, dziennik i budżet."""
-    agent_d = agent_positions()
-    priv = private_wallet(agent_d["sol_usd"])
+    """Szybki stan bez kredytów Helius: oba portfele, wiek raportu, dziennik i budżet.
+
+    Każda część jest czytana osobno: błąd jednego portfela nie ukrywa drugiego (patrz pole errors)."""
+    errors = {}
+
+    def guarded(name, fn):
+        try:
+            return fn()
+        except agent.ApiError as e:
+            errors[name] = str(e)
+            return None
+
+    agent_d = guarded("agent", agent_positions)
+    priv = guarded("private", lambda: private_wallet(agent_d["sol_usd"] if agent_d else sol_price()))
     latest = agent.latest_report()
     report_age_h = (time.time() - agent.parse_ts(latest[1]["created"])) / 3600 if latest else None
-    journal = agent.journal_update(agent.load_journal())
+    journal = guarded("dziennik", lambda: agent.journal_update(agent.load_journal()))
+    if journal is None:
+        journal = agent.load_journal()
     stats = {k: agent.journal_stats(journal, k) for k in ("p24", "p72")}
     usage = agent.load_usage().get(agent.month_key(), 0)
     if args.json:
         print(json.dumps({"agent": agent_d, "private": priv, "report_age_h": report_age_h,
-                          "journal_entries": len(journal), "journal_stats": stats,
+                          "journal_entries": len(journal), "journal_stats": stats, "errors": errors,
                           "helius_month": usage, "helius_budget": agent.HELIUS_BUDGET}, indent=1, ensure_ascii=False))
         return
-    print_positions(agent_d)
+    if agent_d:
+        print_positions(agent_d)
+    else:
+        print(f"Portfel agenta: brak odczytu ({errors['agent'][:120]})")
     print()
-    if priv:
+    if "private" in errors:
+        print(f"Portfel prywatny: brak odczytu ({errors['private'][:120]})")
+    elif priv:
         print(f"Portfel prywatny {short(priv['wallet'])}  ~{fmt_usd(priv['total_usd'])} · SOL {priv['sol']:.4f}")
         dust = [r for r in priv["positions"] if r["dust"]]
         for r in priv["positions"]:

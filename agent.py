@@ -17,6 +17,7 @@ import atexit
 import json
 import math
 import os
+import random
 import re
 import statistics
 import sys
@@ -157,7 +158,10 @@ def http_json(url, headers=None, tries=6):
         except urllib.error.HTTPError as e:
             body = e.read().decode(errors="replace")
             if e.code in (429, 500, 502, 503, 504) and attempt < tries - 1:
-                time.sleep(2 ** attempt + 1)  # 2, 3, 5, 9, 17 s: darmowy plan Helius ma niski limit
+                # 2, 3, 5, 9, 17 s albo tyle, ile każe serwer. Losowy dodatek rozdziela procesy, które dzielą limit.
+                after = e.headers.get("Retry-After", "")
+                wait = min(float(after), 30) if after.isdigit() else 2 ** attempt + 1
+                time.sleep(wait * random.uniform(1, 1.5))
                 continue
             raise ApiError(e.code, body, url) from None
         except (urllib.error.URLError, TimeoutError) as e:

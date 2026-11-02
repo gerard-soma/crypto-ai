@@ -176,6 +176,7 @@ input:focus { border-color: var(--soma-blue); box-shadow: 0 0 0 3px rgba(36, 74,
 .check { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--fg2); cursor: pointer; }
 .msg { margin: 10px 0 0; font-size: 13px; color: var(--fg2); white-space: pre-wrap; }
 .msg.err { color: var(--error); }
+.stan-note { margin: 0 0 16px; padding: 10px 14px; border-radius: 8px; font-size: 13px; background: var(--warning-bg); color: var(--warning); }
 
 .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 8px; background: var(--glass-line); }
 .seg button { padding: 6px 12px; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 13px; color: var(--fg2); }
